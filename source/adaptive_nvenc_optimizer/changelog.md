@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1
+
+- Fixed retained calibration runs disappearing from the user's workflow after closing the pre-encode/sample-test dialog. Reopening the same advisor row now detects an existing retained run and offers **Open Calibration Review** instead of making the clips be generated again.
+- Reopening a row while its sample generation is still running now reconnects to the active background job and resumes progress polling.
+- Prevented accidental duplicate sample generation when a retained calibration run already exists for the same Metrics Plus record.
+- Added reliable browser downloads using Blob-based download handling for retained MKV reference/candidate clips.
+- Added **Download all clips (.zip)**, which packages the blind Reference + Candidate A/B/C/D files into per-sample folders without revealing the QP mapping.
+- Moved the subjective quality controls to the top of Calibration Review under a dedicated **Judge candidate quality** section, with explicit Indistinguishable / Acceptable / Borderline / Unacceptable / Unreviewable buttons.
+- Added clearer **Watch the clips** controls and download labels so the review workflow is visible without scrolling past the clips first.
+- Fast retained calibration results no longer show the QP table immediately after generation, preserving the blind Candidate A/B/C/D review.
+
 ## 0.5.0
 
 - Added **fast calibration mode** for retained human-review runs: generate the NVENC candidate clips first and defer expensive CPU quality scoring until after blind review.
