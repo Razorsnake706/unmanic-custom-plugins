@@ -15,21 +15,21 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 .two{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:12px}.section{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px}.section h2{font-size:15px;margin:0 0 9px}.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}.progress>div{height:100%;background:var(--accent)}.diag-grid{display:flex;gap:7px;flex-wrap:wrap}.diag{padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel2);font-size:12px}
 .table-tools{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:1900px;min-width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1;user-select:none}th[data-col]{position:sticky}tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--panel2)}.file{font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}.muted{color:var(--muted)}.status{font-weight:800;white-space:normal;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .reason{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.empty{padding:25px;text-align:center;color:var(--muted)}.resize-handle{position:absolute;right:-3px;top:0;width:8px;height:100%;cursor:col-resize;z-index:5}.resize-handle:after{content:"";position:absolute;right:3px;top:18%;height:64%;border-right:1px solid rgba(128,128,128,.5)}
-dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;background:transparent;color:var(--text)}dialog::backdrop{background:rgba(0,0,0,.6)}.dialog{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;max-height:90vh;overflow:auto}.dialog h3{margin:0 0 5px}.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}.plan-card{background:var(--panel2);border-radius:8px;padding:10px}.plan-card .label{display:block}.plan-card strong{display:block;margin-top:3px;overflow-wrap:anywhere}.timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.pill{display:inline-flex;padding:4px 7px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);font-size:12px}.source-ok{color:var(--good)}.source-no{color:var(--warn)}
+dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;background:transparent;color:var(--text)}dialog::backdrop{background:rgba(0,0,0,.6)}.dialog{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;max-height:90vh;overflow:auto}.dialog h3{margin:0 0 5px}.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}.plan-card{background:var(--panel2);border-radius:8px;padding:10px}.plan-card .label{display:block}.plan-card strong{display:block;margin-top:3px;overflow-wrap:anywhere}.timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.pill{display:inline-flex;padding:4px 7px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);font-size:12px}.source-ok{color:var(--good)}.source-no{color:var(--warn)}.sample-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}.sample-progress{display:none;margin-top:14px}.sample-progress.show{display:block}.sample-results{display:none;margin-top:14px}.sample-results.show{display:block}.result-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:0}.result-table th,.result-table td{position:static;padding:7px 8px;border-bottom:1px solid var(--border);font-size:12px}.result-table th{color:var(--muted);background:transparent}.warning{padding:9px 10px;border-radius:8px;background:rgba(180,83,9,.14);border:1px solid rgba(180,83,9,.35);color:var(--text);font-size:12px}.successbox{padding:9px 10px;border-radius:8px;background:rgba(21,128,61,.13);border:1px solid rgba(21,128,61,.35);font-size:12px}
 @media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr)}.two{grid-template-columns:1fr}}@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.1.3</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.2.0</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
 
 <div class="banner">
-  <div><strong>Phase 1/2: Learning + calibration prep</strong><div class="sub">Read-only analysis plus sample-test planning. This release still does not alter media files or encoder settings.</div></div>
-  <span class="badge learning">OBSERVE ONLY</span>
+  <div><strong>Phase 2: Manual GPU calibration testing</strong><div class="sub">Historical analysis plus opt-in P1000 sample tests. Full media files and normal encoder settings are still never modified by this panel.</div></div>
+  <span class="badge learning">MANUAL TEST ONLY</span>
 </div>
 
 <div class="grid">
@@ -80,16 +80,40 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
   <div id="planGrid" class="plan-grid"></div>
   <div class="section" style="margin-top:10px"><h2>Representative sample positions</h2><div id="sampleTimes" class="timeline"></div></div>
   <div class="section" style="margin-top:10px"><h2>QP ladder</h2><div id="qpValues" class="timeline"></div></div>
-  <div class="sub" style="margin-top:12px">Planning only: this release does not run FFmpeg sample encodes yet. The next phase will execute these short GPU tests only when the original source is still available.</div>
-  <p><button id="closePlan" class="btn">Close</button></p>
+  <div id="sampleSettingInfo" class="sub" style="margin-top:12px"></div>
+  <div class="warning" style="margin-top:10px"><strong>Manual test safety:</strong> the test only writes temporary plugin sample files. It does not replace the episode. For clean timing/results, avoid starting a test while Unmanic is already heavily using the same GPU.</div>
+
+  <div class="sample-actions">
+    <button id="runSampleTest" class="btn primary">Run sample test</button>
+    <button id="closePlan" class="btn">Close</button>
+  </div>
+
+  <div id="sampleProgress" class="sample-progress">
+    <div><strong id="sampleProgressText">Preparing…</strong></div>
+    <div class="progress"><div id="sampleProgressBar" style="width:0%"></div></div>
+    <div id="sampleCurrent" class="sub"></div>
+  </div>
+
+  <div id="sampleResults" class="sample-results">
+    <div id="sampleResultMessage" class="successbox"></div>
+    <div style="overflow:auto;margin-top:10px">
+      <table class="result-table">
+        <thead><tr><th>QP</th><th>XPSNR</th><th>SSIM</th><th>Avg video bitrate</th><th>Relative bitrate</th><th>GPU encode time</th><th>Samples</th></tr></thead>
+        <tbody id="sampleResultRows"></tbody>
+      </table>
+    </div>
+  </div>
 </div></dialog>
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.1.3';
+const PLUGIN_VERSION='0.2.0';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
+let currentPlan=null;
+let currentPlanId=null;
+let samplePollTimer=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
 const bitrate=v=>{if(v===null||v===undefined)return'—';const n=Number(v);return n>=1e6?(n/1e6).toFixed(2)+' Mbps':(n/1e3).toFixed(0)+' kbps'};
@@ -212,8 +236,106 @@ async function openSamplePlan(id){
     ].map(function(x){return'<div class="plan-card"><span class="label">'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>'}).join('');
     $('sampleTimes').innerHTML=(plan.sample_starts||[]).map(function(v){return'<span class="pill">'+timecode(v)+' → '+timecode(Number(v)+Number(plan.sample_length||0))+'</span>'}).join('')||'<span class="muted">No safe sample positions available.</span>';
     $('qpValues').innerHTML=(plan.qp_values||[]).map(function(v){return'<span class="pill">QP '+esc(v)+'</span>'}).join('');
+    currentPlan=d;
+    currentPlanId=id;
+    $('runSampleTest').disabled=!plan.can_execute_safely;
+    $('runSampleTest').textContent=plan.can_execute_safely?'Run sample test':'Original required';
+    $('sampleSettingInfo').textContent='Keep sample files: '+(plan.keep_sample_files?'ON':'OFF')+' · Change this in the plugin settings. '+(plan.keep_sample_files?'Encoded calibration clips will be retained for manual inspection.':'Temporary encoded clips will be deleted after scores are recorded.');
+    $('sampleProgress').classList.remove('show');
+    $('sampleResults').classList.remove('show');
+    $('sampleResultRows').innerHTML='';
+    $('sampleResultMessage').textContent='';
     $('planDialog').showModal()
   }catch(e){notice('Unable to build sample plan: '+e.message)}
+}
+
+function renderSampleResults(job){
+  const result=job.result||{},rows=result.qp_summary||[];
+  if(!rows.length){
+    $('sampleResultMessage').textContent='The test finished but did not produce QP summary data.';
+    $('sampleResults').classList.add('show');
+    return
+  }
+  const baseline=Number(rows[0].video_bitrate||0);
+  $('sampleResultRows').innerHTML=rows.map(function(x){
+    const br=Number(x.video_bitrate||0);
+    const rel=baseline&&br?((br/baseline-1)*100):null;
+    return '<tr>'+
+      '<td><strong>QP '+esc(x.qp)+'</strong></td>'+
+      '<td>'+(x.xpsnr===null||x.xpsnr===undefined?'—':Number(x.xpsnr).toFixed(2)+' dB')+'</td>'+
+      '<td>'+(x.ssim===null||x.ssim===undefined?'—':Number(x.ssim).toFixed(6))+'</td>'+
+      '<td>'+bitrate(br)+'</td>'+
+      '<td>'+(rel===null?'—':(rel>=0?'+':'')+rel.toFixed(1)+'%')+'</td>'+
+      '<td>'+humanTime(x.encode_seconds)+'</td>'+
+      '<td>'+esc(x.quality_samples)+' / '+esc(x.samples)+'</td>'+
+    '</tr>'
+  }).join('');
+  let message='Manual GPU sample test complete. Objective scores are now saved in the optimizer history.';
+  if(result.retained&&result.sample_directory)message+=' Sample files were retained at '+result.sample_directory+'.';
+  else message+=' Temporary sample files were removed automatically.';
+  $('sampleResultMessage').textContent=message;
+  $('sampleResults').classList.add('show')
+}
+
+async function pollSampleTest(jobId){
+  clearTimeout(samplePollTimer);
+  try{
+    const r=await fetch(base()+'sampleTestStatus?'+new URLSearchParams({job_id:jobId,_:Date.now()}),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to read sample-test status');
+    const job=d.job||{},total=Number(job.total||0),done=Number(job.completed||0);
+    const percent=total?Math.min(100,done/total*100):0;
+    $('sampleProgress').classList.add('show');
+    $('sampleProgressBar').style.width=percent+'%';
+    $('sampleProgressText').textContent=job.status==='completed'?'Complete':job.status==='failed'?'Failed':done+' / '+total+' variants complete';
+    $('sampleCurrent').textContent=job.current||job.stage||'';
+    if(job.status==='completed'){
+      $('runSampleTest').disabled=false;
+      $('runSampleTest').textContent='Run sample test again';
+      renderSampleResults(job);
+      return
+    }
+    if(job.status==='failed'){
+      $('runSampleTest').disabled=false;
+      $('runSampleTest').textContent='Retry sample test';
+      $('sampleResultMessage').textContent='Sample test failed: '+(job.error||'Unknown error');
+      $('sampleResults').classList.add('show');
+      return
+    }
+    samplePollTimer=setTimeout(function(){pollSampleTest(jobId)},1000)
+  }catch(e){
+    $('sampleCurrent').textContent='Status check failed: '+e.message;
+    samplePollTimer=setTimeout(function(){pollSampleTest(jobId)},1500)
+  }
+}
+
+async function startSampleTest(){
+  if(!currentPlanId||!currentPlan)return;
+  if(!(currentPlan.plan||{}).can_execute_safely){
+    notice('The original source is not safely available for this test.');
+    return
+  }
+  if(!confirm('Run '+Number((currentPlan.plan||{}).encode_variants||0)+' short NVENC test variants against the original source?\n\nThe real media file will not be replaced or modified.')){
+    return
+  }
+  $('runSampleTest').disabled=true;
+  $('runSampleTest').textContent='Starting…';
+  $('sampleResults').classList.remove('show');
+  $('sampleProgress').classList.add('show');
+  $('sampleProgressText').textContent='Starting sample test…';
+  $('sampleProgressBar').style.width='0%';
+  try{
+    const r=await fetch(base()+'startSampleTest?'+new URLSearchParams({id:currentPlanId,_:Date.now()}),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to start sample test');
+    $('runSampleTest').textContent='Test running…';
+    pollSampleTest(d.job_id)
+  }catch(e){
+    $('runSampleTest').disabled=false;
+    $('runSampleTest').textContent='Run sample test';
+    $('sampleProgressText').textContent='Unable to start';
+    $('sampleCurrent').textContent=e.message
+  }
 }
 
 async function refreshRepo(){
@@ -284,6 +406,7 @@ async function updatePlugin(){
 
 $('refresh').onclick=load;
 $('updatePlugin').onclick=updatePlugin;
+$('runSampleTest').onclick=startSampleTest;
 $('closePlan').onclick=function(){$('planDialog').close()};
 $('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
 loadColumnWidths();
