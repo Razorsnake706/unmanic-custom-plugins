@@ -933,6 +933,30 @@ def _latest_retained_run_for_metric(metric_id):
     return None
 
 
+def _coarse_qp_ladder(current_qp):
+    """Wide first-pass ladder used to find a visible quality boundary."""
+    base = _int(current_qp)
+    if base is None:
+        base = 28
+    base = max(18, min(45, base))
+
+    values = []
+    for value in (base, base + 6, base + 12, base + 18):
+        value = max(18, min(51, value))
+        if value not in values:
+            values.append(value)
+
+    # If clamping collapsed the top end, back-fill downward so the first
+    # calibration round still has four useful comparison points when possible.
+    candidate = 51
+    while len(values) < 4 and candidate >= 18:
+        if candidate not in values:
+            values.append(candidate)
+        candidate -= 2
+
+    return sorted(values[:4])
+
+
 def _sample_plan(arguments):
     metric_id = _int(_arg(arguments, "id", 0))
     if not metric_id:
@@ -1025,11 +1049,7 @@ def _sample_plan(arguments):
         current_qp = _int(r.get("encoder_quality"))
         if current_qp is None:
             current_qp = 28
-        qp_values = []
-        for value in (current_qp, current_qp + 3, current_qp + 6, current_qp + 9):
-            value = max(18, min(40, value))
-            if value not in qp_values:
-                qp_values.append(value)
+        qp_values = _coarse_qp_ladder(current_qp)
 
         speed = _float(diagnosed.get("encode_speed"))
         total_test_video_seconds = sample_count * float(sample_length) * len(qp_values)
@@ -1081,6 +1101,9 @@ def _sample_plan(arguments):
                 "sample_length": sample_length,
                 "sample_starts": starts,
                 "qp_values": qp_values,
+                "calibration_strategy": "coarse_boundary",
+                "qp_step": 6,
+                "qp_ceiling": 51,
                 "sample_count": sample_count,
                 "encode_variants": sample_count * len(qp_values),
                 "estimated_nvenc_seconds": estimated_encode_seconds,
