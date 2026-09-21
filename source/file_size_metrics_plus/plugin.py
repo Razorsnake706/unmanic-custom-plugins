@@ -568,7 +568,6 @@ def _list_data(arguments):
     direction = "ASC" if str(_arg(arguments, "dir", "desc")).lower() == "asc" else "DESC"
     page = max(1, _num(_arg(arguments, "page", 1)) or 1)
     size = min(250, max(10, _num(_arg(arguments, "page_size", 50)) or 50))
-    combine = str(_arg(arguments, "combine", "0")).lower() in ("1", "true", "yes", "on")
 
     with _db() as conn:
         filtered_rows = [dict(r) for r in conn.execute(
@@ -576,8 +575,7 @@ def _list_data(arguments):
         ).fetchall()]
         options = _available_options(conn)
 
-    items = _group_rows(filtered_rows) if combine else filtered_rows
-    items = _sort_items(items, sort, direction)
+    items = _sort_items(filtered_rows, sort, direction)
     total = len(items)
     start_index = (page - 1) * size
     page_items = items[start_index:start_index + size]
@@ -591,7 +589,6 @@ def _list_data(arguments):
         "page_size": size,
         "summary": summary,
         "options": options,
-        "combined": combine,
     }
 
 
@@ -654,6 +651,37 @@ def _import_legacy():
         return {"success": False, "message": f"Legacy import failed: {exc}"}
 
 
+def _delete_entries(arguments):
+    raw = str(_arg(arguments, "ids", "")).strip()
+    ids = []
+    for value in raw.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        parsed = _num(value)
+        if parsed is not None and parsed > 0:
+            ids.append(parsed)
+
+    # Preserve order while removing duplicate IDs.
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return {"success": False, "deleted": 0, "message": "No valid metric entry IDs were provided."}
+
+    placeholders = ",".join("?" for _ in ids)
+    with _db() as conn:
+        before = conn.total_changes
+        conn.execute("DELETE FROM metrics WHERE id IN ({})".format(placeholders), ids)
+        deleted = conn.total_changes - before
+
+    return {
+        "success": True,
+        "deleted": deleted,
+        "message": "Deleted {} metric entr{}.".format(
+            deleted, "y" if deleted == 1 else "ies"
+        ),
+    }
+
+
 def _csv(arguments):
     where, params = _where(arguments)
     with _db() as conn:
@@ -698,6 +726,10 @@ def render_frontend_panel(data):
     if path == "importLegacy":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_import_legacy())
+        return data
+    if path == "delete":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_delete_entries(args))
         return data
     static = os.path.join(os.path.dirname(__file__), "static", "index.html")
     with open(static, "r", encoding="utf-8") as f:
