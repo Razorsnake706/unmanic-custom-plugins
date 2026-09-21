@@ -183,6 +183,20 @@ def _optimizer_db():
 
         CREATE INDEX IF NOT EXISTS idx_calibration_rating
             ON calibration_ratings(rating, updated);
+
+        CREATE TABLE IF NOT EXISTS calibration_sample_ratings (
+            run_id TEXT NOT NULL,
+            sample_index INTEGER NOT NULL,
+            candidate_label TEXT NOT NULL,
+            qp INTEGER NOT NULL,
+            rating TEXT NOT NULL,
+            created REAL NOT NULL,
+            updated REAL NOT NULL,
+            PRIMARY KEY(run_id, sample_index, candidate_label)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_calibration_sample_rating
+            ON calibration_sample_ratings(run_id, sample_index, rating, updated);
         """
     )
     return conn
