@@ -878,6 +878,9 @@ def _sample_plan(arguments):
 
         diagnosed = _diagnose(row)
         r = dict(row)
+        setting_obj = _library_settings(r.get("library_id"))
+        _cleanup_reference_captures(setting_obj)
+
         source_path = r.get("source_path")
         identity = _current_media_identity(source_path)
 
@@ -894,29 +897,59 @@ def _sample_plan(arguments):
         size_matches = bool(size_ratio is not None and 0.90 <= size_ratio <= 1.10)
         original_available = bool(identity.get("exists") and codec_matches and size_matches)
 
-        if not identity.get("exists"):
-            source_state = "Source path is no longer present."
+        capture = _reference_capture_for_metrics_row(r)
+        capture_available = bool(capture and capture.get("available"))
+        capture_manifest = (capture or {}).get("manifest") or {}
+        capture_clips = capture_manifest.get("clips") or []
+
+        duration = (
+            _float(r.get("source_duration"))
+            or _float(identity.get("duration"))
+            or _float(r.get("dest_duration"))
+        )
+
+        if capture_available:
+            sample_length = (
+                _float(capture.get("sample_length"))
+                or _float(capture_manifest.get("sample_length"))
+                or 30
+            )
+            starts = [
+                _float(clip.get("requested_start"))
+                for clip in capture_clips
+                if _float(clip.get("requested_start")) is not None
+            ]
+            sample_count = len(capture_clips)
+        else:
+            sample_count, sample_length = _sampling_values(setting_obj, duration)
+            starts = _sample_timestamps(duration, sample_length, sample_count)
+            sample_count = len(starts)
+
+        if capture_available and original_available:
+            source_state = (
+                "{} pre-encode reference clips are available, and the original source still appears intact. "
+                "The captured references will be used for calibration."
+            ).format(len(capture_clips))
+        elif capture_available:
+            source_state = (
+                "The full original has been replaced, but {} pre-encode reference clips captured before "
+                "transcoding are available for calibration."
+            ).format(len(capture_clips))
+        elif not identity.get("exists"):
+            source_state = "Source path is no longer present and no pre-encode reference capture is available."
         elif identity.get("probe_error"):
-            source_state = "Source path exists, but could not be probed safely."
+            source_state = "Source path exists, but could not be probed safely and no reference capture is available."
         elif original_available:
             source_state = "The current file still appears to match the original source captured by Metrics Plus."
         elif stored_source_codec and current_codec and stored_source_codec != current_codec:
             source_state = (
                 "The current file is now {} while the recorded source was {}; "
-                "the original appears to have been replaced."
+                "the original appears to have been replaced and no pre-encode reference capture exists."
             ).format(current_codec, stored_source_codec)
         else:
             source_state = (
-                "The current file no longer closely matches the recorded source size; "
-                "the original may have been replaced."
+                "The current file no longer closely matches the recorded source and no pre-encode reference capture exists."
             )
-
-        duration = _float(r.get("source_duration")) or _float(identity.get("duration")) or _float(r.get("dest_duration"))
-        sample_count = max(1, min(8, _int(settings.get_setting("sample_count")) or 4))
-        short_length = max(10, min(120, _int(settings.get_setting("tv_sample_seconds")) or 30))
-        long_length = max(10, min(180, _int(settings.get_setting("movie_sample_seconds")) or 45))
-        sample_length = long_length if duration and duration >= 3600 else short_length
-        starts = _sample_timestamps(duration, sample_length, sample_count)
 
         current_qp = _int(r.get("encoder_quality"))
         if current_qp is None:
@@ -928,11 +961,32 @@ def _sample_plan(arguments):
                 qp_values.append(value)
 
         speed = _float(diagnosed.get("encode_speed"))
-        total_test_video_seconds = len(starts) * sample_length * len(qp_values)
+        total_test_video_seconds = sample_count * float(sample_length) * len(qp_values)
         estimated_encode_seconds = (
             total_test_video_seconds / speed
             if speed and speed > 0 else None
         )
+
+        can_execute = bool((capture_available or original_available) and sample_count and qp_values)
+        mode = (
+            "captured_reference"
+            if capture_available
+            else "manual_test_available"
+            if original_available
+            else "planning_only"
+        )
+
+        reference_public = None
+        if capture_available:
+            reference_public = {
+                "id": capture.get("id"),
+                "created": capture.get("created"),
+                "expires": capture.get("expires"),
+                "clip_count": len(capture_clips),
+                "bytes": capture.get("bytes"),
+                "directory": capture.get("directory") if capture.get("keep_files") else None,
+                "retained": bool(capture.get("keep_files")),
+            }
 
         return {
             "success": True,
@@ -940,6 +994,8 @@ def _sample_plan(arguments):
             "source_check": {
                 "path": source_path,
                 "original_available": original_available,
+                "reference_capture_available": capture_available,
+                "reference_capture_id": capture.get("id") if capture_available else None,
                 "message": source_state,
                 "stored_codec": r.get("source_codec"),
                 "current_codec": identity.get("codec"),
@@ -947,17 +1003,19 @@ def _sample_plan(arguments):
                 "current_size": identity.get("size"),
                 "size_ratio": size_ratio,
             },
+            "reference_capture": reference_public,
             "plan": {
                 "sample_length": sample_length,
                 "sample_starts": starts,
                 "qp_values": qp_values,
-                "sample_count": len(starts),
-                "encode_variants": len(starts) * len(qp_values),
+                "sample_count": sample_count,
+                "encode_variants": sample_count * len(qp_values),
                 "estimated_nvenc_seconds": estimated_encode_seconds,
                 "quality_metrics": ["xpsnr", "ssim"],
-                "can_execute_safely": original_available and bool(starts),
-                "mode": "manual_test_available" if original_available and bool(starts) else "planning_only",
-                "keep_sample_files": bool(settings.get_setting("keep_sample_files")),
+                "can_execute_safely": can_execute,
+                "mode": mode,
+                "reference_capture_id": capture.get("id") if capture_available else None,
+                "keep_sample_files": bool(setting_obj.get_setting("keep_sample_files")),
             },
         }
     finally:
