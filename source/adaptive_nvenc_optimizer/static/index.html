@@ -733,76 +733,127 @@ function findReviewRun(runId){
 function renderReviewRun(run){
   currentReviewRun=run;
   $('reviewTitle').textContent=run.file_name||'Calibration Review';
-  $('reviewSubtitle').textContent=run.completed?'Blind review complete · QP mapping revealed':'Blind review in progress';
+  $('reviewSubtitle').textContent=run.legacy_review
+    ? 'Legacy overall review · QP mapping revealed'
+    : (run.review_submitted?'Per-sample review submitted · QP mapping revealed':'Per-sample blind review in progress');
+
   const qStatus=run.quality_status||'not_started';
   $('reviewQualityStatus').className='quality-state '+((qStatus==='complete')?'done':((qStatus==='failed')?'failed':((qStatus==='queued'||qStatus==='running')?'running':'')));
   $('reviewQualityStatus').textContent=qualityStatusText(run);
   renderAutoBundleState(run);
+
   const bundleStatus=(run.bundle||{}).status||'not_started';
   const busy=(qStatus==='queued'||qStatus==='running'||bundleStatus==='queued'||bundleStatus==='building');
   $('discardCalibrationRun').style.display=busy?'none':'';
   $('deleteReviewFiles').disabled=busy;
-  const allRatings=Object.values(run.ratings||{}).filter(Boolean);
-  const allIndistinguishable=allRatings.length===Number(run.candidate_count||0)&&allRatings.every(function(v){return v==='indistinguishable'});
-  $('allIndistinguishable').disabled=allIndistinguishable;
-  $('allIndistinguishable').textContent=allIndistinguishable?'✓ All candidates marked indistinguishable':'All candidates look indistinguishable';
-  if(run.completed){
-    $('reviewFinishState').style.display='block';
-    if(qStatus==='queued'||qStatus==='running'){
-      $('reviewFinishState').textContent=allIndistinguishable
-        ? 'Saved: all candidates are indistinguishable. Adaptive is now scoring the highest tested QP. Keep this window open or come back later; Finish review will unlock when scoring is done.'
-        : 'Your ratings are saved. Adaptive is finishing targeted objective scoring; Finish review will unlock when scoring is done.';
-    }else if(qStatus==='complete'||qStatus==='skipped'){
-      $('reviewFinishState').textContent='Review complete. Ratings and objective results are saved. Click Finish review & delete clips to remove the temporary references, candidates, and cached ZIP.';
-    }else if(qStatus==='failed'){
-      $('reviewFinishState').textContent='Your ratings are saved, but objective scoring failed. You can still finish and delete the temporary clips, or leave them retained for troubleshooting.';
-    }else{
-      $('reviewFinishState').textContent='Your ratings are saved. Waiting for objective scoring status.';
-    }
+
+  const rated=Number(run.sample_rating_count||0);
+  const required=Number(run.sample_rating_required||0);
+  const draftPercent=required?Math.min(100,rated/required*100):0;
+  $('reviewDraftProgress').textContent=run.legacy_review
+    ? 'Legacy review already submitted'
+    : rated+' / '+required+' ratings selected';
+  $('reviewDraftBar').style.width=(run.legacy_review?100:draftPercent)+'%';
+  $('submitReviewBox').classList.toggle('ready',!!run.draft_complete||!!run.review_submitted||!!run.legacy_review);
+  $('submitReview').disabled=!!run.review_submitted||!!run.legacy_review||!run.draft_complete;
+  $('submitReview').textContent=run.review_submitted||run.legacy_review?'✓ Ratings submitted':'Submit ratings';
+  if(run.legacy_review){
+    $('reviewDraftHint').textContent='This retained run was reviewed with the older overall-per-candidate workflow. Its saved result is preserved as-is.';
+  }else if(run.review_submitted){
+    $('reviewDraftHint').textContent='Submitted. Per-sample ratings are locked; Adaptive uses the worst reviewable sample for each candidate as the conservative overall boundary rating.';
+  }else if(run.draft_complete){
+    $('reviewDraftHint').textContent='All sample ratings are filled in. Review your choices, then press Submit ratings to confirm them.';
   }else{
-    $('reviewFinishState').style.display='none';
-    $('reviewFinishState').textContent='';
+    $('reviewDraftHint').textContent='Rate every candidate in every sample. Your selections are drafts and can be changed until you press Submit ratings.';
   }
+
   $('reviewSamples').innerHTML=(run.samples||[]).map(function(sample){
     const reference=calibrationFileUrl(run.id,'reference',sample.sample_index,'');
-    const candidates=(sample.candidates||[]).map(function(item){
+    const refName='Sample '+sample.sample_index+' - Reference.mkv';
+    const sampleRatings=sample.ratings||{};
+    const sampleRated=Number(sample.rated_count||0);
+    const sampleRequired=Number(sample.required_count||0);
+
+    const downloads=(sample.candidates||[]).map(function(item){
       const href=calibrationFileUrl(run.id,'candidate',sample.sample_index,item.label);
       const filename='Sample '+sample.sample_index+' - Candidate '+item.label+'.mkv';
       return '<button class="download-link" data-cal-download="1" data-url="'+esc(href)+'" data-filename="'+esc(filename)+'">Download Candidate '+esc(item.label)+'</button>'
     }).join('');
-    const refName='Sample '+sample.sample_index+' - Reference.mkv';
+
+    let ratingCards='';
+    if(run.legacy_review){
+      ratingCards='<div class="warning" style="margin-top:9px">This is a legacy overall review. Per-sample ratings were not collected for this run.</div>';
+    }else{
+      ratingCards=(sample.candidates||[]).map(function(item){
+        const label=item.label;
+        const current=sampleRatings[label]||'';
+        const buttons=['indistinguishable','acceptable','borderline','unacceptable','unreviewable'].map(function(value){
+          return '<button data-sample-rating="'+value+'" '+(run.review_submitted?'disabled ':'')+'class="'+(current===value?'active':'')+'">'+ratingLabel(value)+'</button>'
+        }).join('');
+        return '<div class="candidate-review" data-sample-index="'+esc(sample.sample_index)+'" data-candidate="'+esc(label)+'">'+
+          '<strong>Candidate '+esc(label)+(current?' · '+esc(ratingLabel(current)):' · Not rated')+'</strong>'+
+          '<div class="rating-buttons">'+buttons+'</div>'+
+        '</div>'
+      }).join('');
+
+      const sampleValues=Object.values(sampleRatings).filter(Boolean);
+      const sampleAllIndistinguishable=sampleValues.length===sampleRequired&&sampleValues.every(function(v){return v==='indistinguishable'});
+      ratingCards=
+        '<div class="sample-actions" style="margin-top:9px">'+
+          '<button class="btn" data-sample-all-indist="'+esc(sample.sample_index)+'" '+(run.review_submitted?'disabled':'')+'>'+
+            (sampleAllIndistinguishable?'✓ All candidates in this sample marked indistinguishable':'All candidates in this sample look indistinguishable')+
+          '</button>'+
+        '</div>'+ratingCards;
+    }
+
     return '<div class="review-sample">'+
-      '<strong>Sample '+esc(sample.sample_index)+'</strong>'+
-      '<div class="sub">'+timecode(sample.start)+' · '+humanTime(sample.length)+'</div>'+
+      '<div class="sample-review-head">'+
+        '<div><strong>Sample '+esc(sample.sample_index)+'</strong><div class="sub">'+timecode(sample.start)+' · '+humanTime(sample.length)+'</div></div>'+
+        '<div class="sample-review-progress">'+(run.legacy_review?'Legacy':sampleRated+' / '+sampleRequired+' rated')+'</div>'+
+      '</div>'+
       '<div class="download-grid">'+
         '<button class="download-link" data-cal-download="1" data-url="'+esc(reference)+'" data-filename="'+esc(refName)+'">Download Reference</button>'+
-        candidates+
+        downloads+
       '</div>'+
+      ratingCards+
     '</div>'
   }).join('');
+
   wireCalibrationDownloads();
 
-  const ratings=run.ratings||{};
-  $('reviewCandidates').innerHTML=(run.candidate_labels||[]).map(function(label){
-    const current=ratings[label]||'';
-    const buttons=['indistinguishable','acceptable','borderline','unacceptable','unreviewable'].map(function(value){
-      return '<button data-rating="'+value+'" class="'+(current===value?'active':'')+'">'+ratingLabel(value)+'</button>'
-    }).join('');
-    return '<div class="candidate-review" data-candidate="'+esc(label)+'">'+
-      '<strong>Candidate '+esc(label)+(current?' · '+esc(ratingLabel(current)):' · Not rated')+'</strong>'+
-      '<div class="review-note">Choose one overall rating after comparing Candidate '+esc(label)+' with the Reference in all four sample positions.</div>'+
-      '<div class="rating-buttons">'+buttons+'</div>'+
-    '</div>'
-  }).join('');
-
-  document.querySelectorAll('.candidate-review').forEach(function(card){
+  document.querySelectorAll('.candidate-review[data-sample-index]').forEach(function(card){
+    const sampleIndex=card.dataset.sampleIndex;
     const label=card.dataset.candidate;
-    card.querySelectorAll('button[data-rating]').forEach(function(btn){
-      btn.onclick=function(){saveCalibrationRating(run.id,label,btn.dataset.rating)}
+    card.querySelectorAll('button[data-sample-rating]').forEach(function(btn){
+      btn.onclick=function(){
+        saveSampleCalibrationRating(run.id,sampleIndex,label,btn.dataset.sampleRating)
+      }
     })
   });
 
+  document.querySelectorAll('[data-sample-all-indist]').forEach(function(btn){
+    btn.onclick=function(){
+      rateSampleAllCalibration(run.id,btn.dataset.sampleAllIndist,'indistinguishable')
+    }
+  });
+
+  const allRatings=Object.values(run.ratings||{}).filter(Boolean);
+  const allIndistinguishable=allRatings.length===Number(run.candidate_count||0)&&allRatings.every(function(v){return v==='indistinguishable'});
+
   if(run.completed){
+    $('reviewFinishState').style.display='block';
+    if(qStatus==='queued'||qStatus==='running'){
+      $('reviewFinishState').textContent=allIndistinguishable
+        ? 'Review submitted. Every candidate remained indistinguishable at the conservative per-sample boundary; Adaptive is scoring the highest tested QP before cleanup.'
+        : 'Review submitted. Adaptive is finishing targeted objective scoring; Finish review will unlock when scoring is done.';
+    }else if(qStatus==='complete'||qStatus==='skipped'){
+      $('reviewFinishState').textContent='Review complete. Per-sample ratings, derived overall ratings, and objective results are saved. Click Finish review & delete clips to remove the temporary files.';
+    }else if(qStatus==='failed'){
+      $('reviewFinishState').textContent='Your submitted ratings are saved, but objective scoring failed. You can still finish and delete the temporary clips, or keep them for troubleshooting.';
+    }else{
+      $('reviewFinishState').textContent='Review submitted. Waiting for objective scoring status.';
+    }
+
     $('reviewRevealRows').innerHTML=(run.revealed||[]).map(function(item){
       return '<tr>'+
         '<td><strong>'+esc(item.label)+'</strong></td>'+
@@ -816,6 +867,8 @@ function renderReviewRun(run){
     $('reviewReveal').classList.add('show');
     $('deleteReviewFiles').style.display=busy?'none':'';
   }else{
+    $('reviewFinishState').style.display='none';
+    $('reviewFinishState').textContent='';
     $('reviewReveal').classList.remove('show');
     $('reviewRevealRows').innerHTML='';
     $('deleteReviewFiles').style.display='none';
