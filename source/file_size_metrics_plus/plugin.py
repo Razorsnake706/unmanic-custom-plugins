@@ -298,9 +298,19 @@ def _probe(path):
 
     audio_bitrate = sum(audio_bitrates) if audio_bitrates else None
     video_bitrate = _stream_bitrate(video, duration)
-    if video_bitrate is None and total_bitrate is not None and audio_bitrate is not None:
-        estimate = total_bitrate - audio_bitrate
-        video_bitrate = estimate if estimate > 0 else None
+
+    # Matroska BPS tags can be inherited from the source when FFmpeg rewrites a
+    # stream. Reject impossible/stale values and fall back to the container
+    # residual. This is especially important for re-encoded video streams.
+    if total_bitrate is not None and audio_bitrate is not None:
+        residual = total_bitrate - audio_bitrate
+        if residual > 0:
+            if (
+                video_bitrate is None
+                or video_bitrate > total_bitrate * 1.02
+                or video_bitrate > residual * 1.10
+            ):
+                video_bitrate = int(residual)
 
     transfer = video.get("color_transfer")
     primaries = video.get("color_primaries")
@@ -1121,6 +1131,22 @@ def _csv(arguments):
     return out.getvalue()
 
 
+def _installed_plugin_record():
+    try:
+        records = PluginsHandler().get_plugin_list_filtered_and_sorted(plugin_id=PLUGIN_ID)
+        for record in records or []:
+            return {
+                "success": True,
+                "id": record.get("id"),
+                "plugin_id": record.get("plugin_id"),
+                "version": record.get("version"),
+                "update_available": record.get("update_available"),
+            }
+    except Exception:
+        logger.exception("Unable to find installed plugin record")
+    return {"success": False, "message": "Installed plugin record was not found."}
+
+
 def _refresh_custom_repo_cache_direct(force=False):
     """Refresh this custom repo directly from GitHub.
 
@@ -1213,6 +1239,11 @@ def render_frontend_panel(data):
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_import_legacy())
         return data
+    if path == "selfRecord":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_installed_plugin_record(), default=str)
+        return data
+
     if path == "refreshRepo":
         try:
             result = _refresh_custom_repo_cache_direct(force=True)
