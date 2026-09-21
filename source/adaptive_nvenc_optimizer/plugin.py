@@ -2290,6 +2290,12 @@ def _discard_calibration_run(arguments):
             "success": False,
             "message": "Objective scoring is currently running. Wait for it to finish before discarding this source.",
         }
+    bundle_state = _bundle_state_for_run(run_id)
+    if bundle_state.get("status") in ("queued", "building"):
+        return {
+            "success": False,
+            "message": "The calibration ZIP is still being prepared. Wait for it to finish before discarding this source.",
+        }
 
     result["calibration_discarded"] = True
     result["calibration_discard_reason"] = reason[:300]
@@ -2322,6 +2328,13 @@ def _delete_calibration_files(arguments):
     run = _load_sample_run(run_id)
     if run is None:
         return {"success": False, "message": "Calibration run was not found."}
+
+    bundle_state = _bundle_state_for_run(run_id)
+    if bundle_state.get("status") in ("queued", "building"):
+        return {
+            "success": False,
+            "message": "The calibration ZIP is still being prepared. Wait for it to finish before deleting retained files.",
+        }
 
     result = run.get("result") or {}
     removed = []
