@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+- Added an optional **Combine repeat passes** view that groups repeated processing of the same media file into one row.
+- Combined rows show the total before/after size across all linked passes and a summary such as Video + Audio.
+- Clicking any file now shows the complete processing history for that media item, including each library, worker, video change, audio change, size change, and path.
+- Kept the original one-row-per-task view as the default so no existing workflow is lost.
+- Improved audio-change detection for new tasks by recording audio profile and bitrate when FFprobe reports them.
+- Fixed hidden table columns still reserving width, which caused blank space after the Worker column.
+- Refined the default column widths and made the visible columns fill the available panel width more naturally.
+- Added a publish-time Python syntax check for the plugin.
+
 ## 0.1.2
 
 - Fixed dark-theme text colours in the individual file details dialog.
