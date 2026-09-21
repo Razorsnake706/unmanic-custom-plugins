@@ -95,4 +95,16 @@ repo = {
 text = json.dumps(repo, indent=4) + "\n"
 (DIST / "repo.json").write_text(text)
 (DIST / "repo.json.md5").write_text(hashlib.md5(text.encode()).hexdigest())
+
+# Secondary stable index. This gives existing installs a clean migration URL if
+# Unmanic's remote repo proxy has cached an older copy of repo.json.
+repo_v2 = json.loads(text)
+repo_v2["repo"]["id"] = f"repository.{OWNER.lower()}.v2"
+repo_v2["repo"]["repo_data_url"] = (
+    f"https://raw.githubusercontent.com/{OWNER}/{REPO}/{BRANCH}/repo-v2.json"
+)
+repo_v2_text = json.dumps(repo_v2, indent=4) + "\n"
+(DIST / "repo-v2.json").write_text(repo_v2_text)
+(DIST / "repo-v2.json.md5").write_text(hashlib.md5(repo_v2_text.encode()).hexdigest())
+
 (DIST / "release-manifest.json").write_text(json.dumps(release_manifest, indent=2) + "\n")
