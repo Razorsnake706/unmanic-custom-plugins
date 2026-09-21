@@ -7,6 +7,9 @@ on:
       - 'build_repo.py'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
+concurrency:
+  group: publish-unmanic-repo
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
@@ -22,8 +25,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin repo
-          git worktree add /tmp/unmanic-repo repo
+          git fetch origin repo:refs/remotes/origin/repo
+          git worktree add -B repo /tmp/unmanic-repo origin/repo
           find /tmp/unmanic-repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a dist/. /tmp/unmanic-repo/
           cd /tmp/unmanic-repo
