@@ -2304,93 +2304,279 @@ def _delete_calibration_files(arguments):
     return {"success": True, "removed": removed}
 
 
-def _calibration_bundle(arguments):
-    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+def _bundle_source_files(run_id):
     run = _load_sample_run(run_id)
     if run is None:
-        return {"success": False, "message": "Calibration run was not found."}, None
+        raise RuntimeError("Calibration run was not found.")
 
     result = run.get("result") or {}
     sample_dir = result.get("sample_directory")
     reference_dir = result.get("reference_directory")
     if not sample_dir or not os.path.isdir(sample_dir):
-        return {"success": False, "message": "Retained candidate clips are not available."}, None
+        raise RuntimeError("Retained candidate clips are not available.")
     if not reference_dir or not os.path.isdir(reference_dir):
-        return {"success": False, "message": "Retained reference clips are not available."}, None
+        raise RuntimeError("Retained reference clips are not available.")
 
     candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
     samples = result.get("samples") or []
+    files = []
 
-    buffer = io.BytesIO()
-    try:
-        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-            instructions = (
-                "Adaptive NVENC Optimizer blind calibration bundle\n\n"
-                "Compare each Candidate A/B/C/D against the Reference across all sample folders.\n"
-                "The candidate-to-QP mapping is intentionally not included until ratings are complete.\n"
-                "Return to the Adaptive NVENC Optimizer Calibration Review panel to rate each candidate.\n"
+    instructions = (
+        "Adaptive NVENC Optimizer blind calibration bundle\n\n"
+        "Compare each Candidate A/B/C/D against the Reference across all sample folders.\n"
+        "The candidate-to-QP mapping is intentionally not included until ratings are complete.\n"
+        "Return to the Adaptive NVENC Optimizer Calibration Review panel to rate each candidate.\n"
+    )
+    files.append(("__TEXT__", "README.txt", instructions))
+
+    sample_indexes = sorted({
+        int(item.get("sample_index"))
+        for item in samples
+        if item.get("sample_index") is not None
+    })
+    reference_root = os.path.realpath(reference_dir)
+    candidate_root = os.path.realpath(sample_dir)
+
+    for sample_index in sample_indexes:
+        sample_item = next(
+            (
+                item for item in samples
+                if int(item.get("sample_index") or -1) == sample_index
+                and item.get("reference_file")
+            ),
+            None,
+        )
+        if not sample_item:
+            continue
+
+        reference_path = os.path.realpath(
+            os.path.join(reference_dir, sample_item.get("reference_file"))
+        )
+        if (
+            (reference_path == reference_root or reference_path.startswith(reference_root + os.sep))
+            and os.path.isfile(reference_path)
+        ):
+            files.append((
+                reference_path,
+                "Sample {:02d}/Reference.mkv".format(sample_index),
+                None,
+            ))
+
+        for label in sorted(candidate_map):
+            qp = candidate_map[label]
+            candidate_item = next(
+                (
+                    item for item in samples
+                    if int(item.get("sample_index") or -1) == sample_index
+                    and int(item.get("qp") or -1) == qp
+                    and item.get("file")
+                ),
+                None,
             )
-            archive.writestr("README.txt", instructions)
-
-            sample_indexes = sorted({
-                int(item.get("sample_index"))
-                for item in samples
-                if item.get("sample_index") is not None
-            })
-            for sample_index in sample_indexes:
-                sample_item = next(
-                    (
-                        item for item in samples
-                        if int(item.get("sample_index") or -1) == sample_index
-                        and item.get("reference_file")
-                    ),
+            if not candidate_item:
+                continue
+            candidate_path = os.path.realpath(
+                os.path.join(sample_dir, candidate_item.get("file"))
+            )
+            if (
+                (candidate_path == candidate_root or candidate_path.startswith(candidate_root + os.sep))
+                and os.path.isfile(candidate_path)
+            ):
+                files.append((
+                    candidate_path,
+                    "Sample {:02d}/Candidate {}.mkv".format(sample_index, label),
                     None,
-                )
-                if not sample_item:
-                    continue
+                ))
 
-                reference_path = os.path.realpath(
-                    os.path.join(reference_dir, sample_item.get("reference_file"))
-                )
-                reference_root = os.path.realpath(reference_dir)
-                if (
-                    (reference_path == reference_root or reference_path.startswith(reference_root + os.sep))
-                    and os.path.isfile(reference_path)
-                ):
-                    archive.write(
-                        reference_path,
-                        arcname="Sample {:02d}/Reference.mkv".format(sample_index),
-                    )
+    return files
 
-                for label in sorted(candidate_map):
-                    qp = candidate_map[label]
-                    candidate_item = next(
-                        (
-                            item for item in samples
-                            if int(item.get("sample_index") or -1) == sample_index
-                            and int(item.get("qp") or -1) == qp
-                            and item.get("file")
-                        ),
-                        None,
-                    )
-                    if not candidate_item:
-                        continue
-                    candidate_path = os.path.realpath(
-                        os.path.join(sample_dir, candidate_item.get("file"))
-                    )
-                    candidate_root = os.path.realpath(sample_dir)
-                    if (
-                        (candidate_path == candidate_root or candidate_path.startswith(candidate_root + os.sep))
-                        and os.path.isfile(candidate_path)
-                    ):
-                        archive.write(
-                            candidate_path,
-                            arcname="Sample {:02d}/Candidate {}.mkv".format(sample_index, label),
-                        )
-        return buffer.getvalue(), "application/zip"
+
+def _bundle_job_snapshot(job):
+    return {
+        "id": job.get("id"),
+        "run_id": job.get("run_id"),
+        "status": job.get("status"),
+        "total": job.get("total"),
+        "completed": job.get("completed"),
+        "current": job.get("current"),
+        "bytes": job.get("bytes"),
+        "error": job.get("error"),
+        "filename": job.get("filename"),
+    }
+
+
+def _bundle_worker(job_id, run_id, files, bundle_path):
+    try:
+        with _bundle_job_lock:
+            job = _bundle_jobs.get(job_id)
+            if job:
+                job["status"] = "building"
+                job["current"] = "Preparing archive"
+
+        with zipfile.ZipFile(
+            bundle_path,
+            "w",
+            compression=zipfile.ZIP_STORED,
+            allowZip64=True,
+        ) as archive:
+            for index, (source, arcname, text_content) in enumerate(files, 1):
+                with _bundle_job_lock:
+                    job = _bundle_jobs.get(job_id)
+                    if job:
+                        job["current"] = arcname
+
+                if source == "__TEXT__":
+                    archive.writestr(arcname, text_content or "")
+                else:
+                    archive.write(source, arcname=arcname)
+
+                with _bundle_job_lock:
+                    job = _bundle_jobs.get(job_id)
+                    if job:
+                        job["completed"] = index
+
+        size = os.path.getsize(bundle_path)
+        with _bundle_job_lock:
+            job = _bundle_jobs.get(job_id)
+            if job:
+                job["status"] = "ready"
+                job["current"] = None
+                job["bytes"] = size
+                job["error"] = None
     except Exception as exc:
         logger.exception("Unable to build calibration ZIP bundle")
+        try:
+            if os.path.exists(bundle_path):
+                os.remove(bundle_path)
+        except OSError:
+            pass
+        with _bundle_job_lock:
+            job = _bundle_jobs.get(job_id)
+            if job:
+                job["status"] = "failed"
+                job["current"] = None
+                job["error"] = str(exc)
+
+
+def _start_calibration_bundle(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    if not run_id:
+        return {"success": False, "message": "Calibration run ID is required."}
+
+    try:
+        files = _bundle_source_files(run_id)
+    except Exception as exc:
+        return {"success": False, "message": str(exc)}
+
+    job_id = "bundle-{}".format(run_id)
+    safe_id = "".join(ch for ch in run_id if ch.isalnum() or ch in ("-", "_"))[:120] or "calibration"
+    bundle_path = os.path.join(_bundle_root(), safe_id + ".zip")
+    filename = "{} - blind calibration clips.zip".format(
+        (_load_sample_run(run_id) or {}).get("file_name") or "calibration"
+    )
+
+    with _bundle_job_lock:
+        existing = _bundle_jobs.get(job_id)
+        if existing:
+            if existing.get("status") in ("queued", "building"):
+                return {"success": True, "job": _bundle_job_snapshot(existing)}
+            if (
+                existing.get("status") == "ready"
+                and os.path.isfile(existing.get("path") or "")
+            ):
+                return {"success": True, "job": _bundle_job_snapshot(existing)}
+
+        if os.path.isfile(bundle_path):
+            _bundle_jobs[job_id] = {
+                "id": job_id,
+                "run_id": run_id,
+                "status": "ready",
+                "total": len(files),
+                "completed": len(files),
+                "current": None,
+                "bytes": os.path.getsize(bundle_path),
+                "error": None,
+                "path": bundle_path,
+                "filename": filename,
+            }
+            return {
+                "success": True,
+                "job": _bundle_job_snapshot(_bundle_jobs[job_id]),
+            }
+
+        job = {
+            "id": job_id,
+            "run_id": run_id,
+            "status": "queued",
+            "total": len(files),
+            "completed": 0,
+            "current": None,
+            "bytes": None,
+            "error": None,
+            "path": bundle_path,
+            "filename": filename,
+        }
+        _bundle_jobs[job_id] = job
+
+    thread = threading.Thread(
+        target=_bundle_worker,
+        args=(job_id, run_id, files, bundle_path),
+        name="adaptive-bundle-{}".format(safe_id),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"success": True, "job": _bundle_job_snapshot(job)}
+
+
+def _calibration_bundle_status(arguments):
+    job_id = str(_arg(arguments, "job_id", "") or "").strip()
+    if not job_id:
+        return {"success": False, "message": "Bundle job ID is required."}
+    with _bundle_job_lock:
+        job = _bundle_jobs.get(job_id)
+        if not job:
+            return {"success": False, "message": "Bundle job was not found."}
+        return {"success": True, "job": _bundle_job_snapshot(job)}
+
+
+def _calibration_bundle_file(arguments):
+    job_id = str(_arg(arguments, "job_id", "") or "").strip()
+    with _bundle_job_lock:
+        job = dict(_bundle_jobs.get(job_id) or {})
+    if not job:
+        return {"success": False, "message": "Bundle job was not found."}, None
+    if job.get("status") != "ready":
+        return {"success": False, "message": "Bundle is not ready yet."}, None
+
+    path = job.get("path")
+    if not path or not os.path.isfile(path):
+        return {"success": False, "message": "Bundle file is missing."}, None
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(), "application/zip"
+    except Exception as exc:
+        logger.exception("Unable to read calibration ZIP bundle")
         return {"success": False, "message": str(exc)}, None
+
+
+def _calibration_bundle(arguments):
+    """Compatibility path. Build synchronously only for older panels."""
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    try:
+        files = _bundle_source_files(run_id)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+            for source, arcname, text_content in files:
+                if source == "__TEXT__":
+                    archive.writestr(arcname, text_content or "")
+                else:
+                    archive.write(source, arcname=arcname)
+        return buffer.getvalue(), "application/zip"
+    except Exception as exc:
+        logger.exception("Unable to build compatibility calibration ZIP bundle")
+        return {"success": False, "message": str(exc)}, None
+
 
 
 def _calibration_file(arguments):
