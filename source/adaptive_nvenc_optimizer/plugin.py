@@ -1574,6 +1574,11 @@ def _sample_test_worker(job_id, metric_id):
             else:
                 _remove_reference_capture(capture_used, status="consumed")
 
+        if keep and test_completed:
+            try:
+                _start_calibration_bundle({"run_id": job_id})
+            except Exception:
+                logger.exception("Unable to auto-start retained calibration ZIP build")
 
 
 def _start_sample_test(arguments):
@@ -2267,6 +2272,49 @@ def _safe_calibration_file(arguments):
         return None
     return path
 
+
+
+def _discard_calibration_run(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    reason = str(_arg(arguments, "reason", "unsuitable_source") or "unsuitable_source").strip()
+    delete_files = str(_arg(arguments, "delete_files", "1") or "1").lower() not in ("0", "false", "no")
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    quality_status = str(result.get("quality_status") or "").lower()
+    if quality_status in ("queued", "running"):
+        return {
+            "success": False,
+            "message": "Objective scoring is currently running. Wait for it to finish before discarding this source.",
+        }
+
+    result["calibration_discarded"] = True
+    result["calibration_discard_reason"] = reason[:300]
+    result["calibration_discarded_at"] = time.time()
+    result["quality_status"] = "discarded"
+    result["quality_error"] = None
+    _save_sample_run_result(run_id, result)
+
+    # Ratings may already exist if the user decided the source was bad partway
+    # through review. Keep them for auditability, but all threshold/training
+    # aggregation explicitly ignores discarded runs.
+    removed = []
+    if delete_files:
+        cleanup = _delete_calibration_files({"run_id": run_id})
+        if not cleanup.get("success"):
+            return cleanup
+        removed = cleanup.get("removed") or []
+
+    return {
+        "success": True,
+        "run_id": run_id,
+        "discarded": True,
+        "delete_files": delete_files,
+        "removed": removed,
+    }
 
 
 def _delete_calibration_files(arguments):
@@ -3041,6 +3089,11 @@ def render_frontend_panel(data):
     if path == "rateCalibration":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_rate_calibration(args), default=str)
+        return data
+
+    if path == "discardCalibrationRun":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_discard_calibration_run(args), default=str)
         return data
 
     if path == "deleteCalibrationFiles":
