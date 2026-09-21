@@ -3451,6 +3451,21 @@ def render_frontend_panel(data):
         data["content"] = json.dumps(_calibration_runs(), default=str)
         return data
 
+    if path == "rateSampleCalibration":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_rate_sample_calibration(args), default=str)
+        return data
+
+    if path == "rateSampleAllCalibration":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_rate_sample_all_calibration(args), default=str)
+        return data
+
+    if path == "submitCalibrationReview":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_submit_calibration_review(args), default=str)
+        return data
+
     if path == "rateAllCalibration":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_rate_all_calibration(args), default=str)
