@@ -883,6 +883,46 @@ def on_worker_process(data):
     return
 
 
+def _active_sample_job_for_metric(metric_id):
+    metric_id = _int(metric_id)
+    if metric_id is None:
+        return None
+    with _sample_job_lock:
+        for job in _sample_jobs.values():
+            if _int(job.get("metric_id")) != metric_id:
+                continue
+            if job.get("status") in ("queued", "running"):
+                return dict(job)
+    return None
+
+
+def _latest_retained_run_for_metric(metric_id):
+    metric_id = _int(metric_id)
+    if metric_id is None:
+        return None
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM sample_runs
+            WHERE metric_id=? AND success=1 AND keep_files=1
+            ORDER BY finished DESC, started DESC
+            """,
+            (metric_id,),
+        ).fetchall()
+
+    for row in rows:
+        run = dict(row)
+        try:
+            run["result"] = json.loads(run.get("result_json") or "{}")
+        except Exception:
+            run["result"] = {}
+        payload = _calibration_run_payload(run)
+        if payload:
+            return payload
+    return None
+
+
 def _sample_plan(arguments):
     metric_id = _int(_arg(arguments, "id", 0))
     if not metric_id:
@@ -1025,6 +1065,8 @@ def _sample_plan(arguments):
                 "size_ratio": size_ratio,
             },
             "reference_capture": reference_public,
+            "active_job": _active_sample_job_for_metric(metric_id),
+            "existing_review": _latest_retained_run_for_metric(metric_id),
             "plan": {
                 "sample_length": sample_length,
                 "sample_starts": starts,
