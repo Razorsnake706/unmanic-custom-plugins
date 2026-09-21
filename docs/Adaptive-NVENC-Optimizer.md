@@ -259,3 +259,13 @@ After all blind candidates are rated, Adaptive may still need the retained Refer
 When objective scoring finishes, use **Finish review & delete clips**. This removes the temporary retained reference clips, candidate clips, and cached ZIP while preserving the subjective ratings, revealed Candidate-to-QP mapping, bitrate measurements, and objective quality results in the optimizer history.
 
 For **All candidates look indistinguishable**, the review immediately records all blind candidates as indistinguishable and targets the highest tested QP for objective scoring. The Finish action becomes available once that scoring pass completes.
+
+## Per-sample subjective review
+
+Calibration Review now rates every sample position independently rather than asking for one overall Candidate A/B/C/D judgment across the entire episode. Each sample has its own Reference download, Candidate A/B/C/D downloads, rating controls, and **All candidates in this sample look indistinguishable** shortcut.
+
+Ratings are saved as drafts immediately. They do not affect learned thresholds and do not start objective scoring until the user presses **Submit ratings**. The review shows a live `rated / required` counter and keeps a sticky Submit ratings control visible at the top of the modal. Submission is enabled only when every candidate in every sample has a rating.
+
+After submission, the per-sample ratings are locked. For the current boundary-selection algorithm, Adaptive derives one conservative candidate rating using the worst reviewable sample across the episode: `indistinguishable < acceptable < borderline < unacceptable`. A sample marked `unreviewable` is excluded from that aggregation unless every sample for the candidate is unreviewable. The original per-sample ratings remain stored separately for future content-aware learning.
+
+The blind Candidate-to-QP mapping is revealed only after submission. Targeted XPSNR/SSIM scoring then runs as before, followed by **Finish review & delete clips** once objective scoring is complete.
