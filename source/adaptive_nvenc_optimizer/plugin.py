@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import hashlib
 import json
 import math
 import os
@@ -163,6 +164,19 @@ def _optimizer_db():
             ON reference_captures(source_path);
         CREATE INDEX IF NOT EXISTS idx_reference_status
             ON reference_captures(status, created);
+
+        CREATE TABLE IF NOT EXISTS calibration_ratings (
+            run_id TEXT NOT NULL,
+            candidate_label TEXT NOT NULL,
+            qp INTEGER NOT NULL,
+            rating TEXT NOT NULL,
+            created REAL NOT NULL,
+            updated REAL NOT NULL,
+            PRIMARY KEY(run_id, candidate_label)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_calibration_rating
+            ON calibration_ratings(rating, updated);
         """
     )
     return conn
@@ -1557,6 +1571,370 @@ def _sample_test_settings():
     }
 
 
+
+_CALIBRATION_RATINGS = (
+    "indistinguishable",
+    "acceptable",
+    "borderline",
+    "unacceptable",
+    "unreviewable",
+)
+
+
+def _blind_candidate_map(run_id, qps):
+    clean = sorted({int(qp) for qp in qps})
+    ranked = sorted(
+        clean,
+        key=lambda qp: hashlib.sha256(
+            "{}:{}".format(run_id, qp).encode("utf-8")
+        ).hexdigest(),
+    )
+    labels = "ABCDEFGH"
+    return {labels[index]: qp for index, qp in enumerate(ranked)}
+
+
+def _load_sample_run(run_id):
+    with _optimizer_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM sample_runs WHERE id=?",
+            (str(run_id),),
+        ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    try:
+        item["result"] = json.loads(item.get("result_json") or "{}")
+    except Exception:
+        item["result"] = {}
+    return item
+
+
+def _rating_rows(run_id):
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id, candidate_label, qp, rating, created, updated
+            FROM calibration_ratings
+            WHERE run_id=?
+            ORDER BY candidate_label
+            """,
+            (str(run_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _calibration_run_payload(run):
+    result = run.get("result") or {}
+    if not run.get("success") or not run.get("keep_files") or not result.get("retained"):
+        return None
+
+    sample_dir = result.get("sample_directory")
+    reference_dir = result.get("reference_directory")
+    if not sample_dir or not os.path.isdir(sample_dir):
+        return None
+    if not reference_dir or not os.path.isdir(reference_dir):
+        return None
+
+    qps = [int(qp) for qp in (result.get("qp_values") or [])]
+    candidate_map = _blind_candidate_map(run.get("id"), qps)
+    ratings = _rating_rows(run.get("id"))
+    rating_by_label = {row["candidate_label"]: row for row in ratings}
+    completed = bool(candidate_map) and all(label in rating_by_label for label in candidate_map)
+
+    samples = result.get("samples") or []
+    sample_indexes = sorted({
+        int(item.get("sample_index"))
+        for item in samples
+        if item.get("sample_index") is not None
+    })
+
+    sample_rows = []
+    for sample_index in sample_indexes:
+        sample_item = next(
+            (
+                item for item in samples
+                if int(item.get("sample_index") or -1) == sample_index
+            ),
+            None,
+        )
+        if not sample_item:
+            continue
+        reference_name = sample_item.get("reference_file")
+        if not reference_name:
+            continue
+        reference_path = os.path.join(reference_dir, reference_name)
+        if not os.path.isfile(reference_path):
+            continue
+
+        candidates = []
+        for label in sorted(candidate_map):
+            qp = candidate_map[label]
+            candidate_item = next(
+                (
+                    item for item in samples
+                    if int(item.get("sample_index") or -1) == sample_index
+                    and int(item.get("qp") or -1) == qp
+                ),
+                None,
+            )
+            if not candidate_item or not candidate_item.get("file"):
+                continue
+            candidate_path = os.path.join(sample_dir, candidate_item.get("file"))
+            if not os.path.isfile(candidate_path):
+                continue
+            candidates.append({"label": label})
+
+        sample_rows.append({
+            "sample_index": sample_index,
+            "start": sample_item.get("start"),
+            "length": sample_item.get("length"),
+            "candidates": candidates,
+        })
+
+    revealed = []
+    if completed:
+        summary_by_qp = {
+            int(item.get("qp")): item
+            for item in (result.get("qp_summary") or [])
+            if item.get("qp") is not None
+        }
+        for label in sorted(candidate_map):
+            qp = candidate_map[label]
+            rating = rating_by_label.get(label) or {}
+            summary = summary_by_qp.get(qp) or {}
+            revealed.append({
+                "label": label,
+                "qp": qp,
+                "rating": rating.get("rating"),
+                "xpsnr": summary.get("xpsnr"),
+                "ssim": summary.get("ssim"),
+                "video_bitrate": summary.get("video_bitrate"),
+                "encode_seconds": summary.get("encode_seconds"),
+                "quality_samples": summary.get("quality_samples"),
+                "samples": summary.get("samples"),
+            })
+
+    return {
+        "id": run.get("id"),
+        "metric_id": run.get("metric_id"),
+        "file_name": run.get("file_name"),
+        "source_path": run.get("source_path"),
+        "started": run.get("started"),
+        "finished": run.get("finished"),
+        "sample_count": len(sample_rows),
+        "candidate_count": len(candidate_map),
+        "candidate_labels": sorted(candidate_map),
+        "ratings": {
+            label: (rating_by_label.get(label) or {}).get("rating")
+            for label in sorted(candidate_map)
+        },
+        "completed": completed,
+        "samples": sample_rows,
+        "revealed": revealed,
+    }
+
+
+def _calibration_runs():
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM sample_runs
+            WHERE success=1 AND keep_files=1
+            ORDER BY finished DESC, started DESC
+            """
+        ).fetchall()
+
+    runs = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["result"] = json.loads(item.get("result_json") or "{}")
+        except Exception:
+            item["result"] = {}
+        payload = _calibration_run_payload(item)
+        if payload:
+            runs.append(payload)
+
+    rated = []
+    with _optimizer_db() as conn:
+        rating_rows = conn.execute(
+            """
+            SELECT r.run_id, r.candidate_label, r.qp, r.rating,
+                   s.result_json
+            FROM calibration_ratings r
+            JOIN sample_runs s ON s.id=r.run_id
+            WHERE s.success=1
+            """
+        ).fetchall()
+
+    for row in rating_rows:
+        try:
+            result = json.loads(row["result_json"] or "{}")
+        except Exception:
+            result = {}
+        summary = next(
+            (
+                item for item in (result.get("qp_summary") or [])
+                if int(item.get("qp") or -1) == int(row["qp"])
+            ),
+            None,
+        )
+        if not summary:
+            continue
+        rated.append({
+            "rating": row["rating"],
+            "qp": int(row["qp"]),
+            "xpsnr": summary.get("xpsnr"),
+            "ssim": summary.get("ssim"),
+            "video_bitrate": summary.get("video_bitrate"),
+        })
+
+    accepted = [
+        item for item in rated
+        if item["rating"] in ("indistinguishable", "acceptable")
+    ]
+    rejected = [
+        item for item in rated
+        if item["rating"] == "unacceptable"
+    ]
+    borderline = [
+        item for item in rated
+        if item["rating"] == "borderline"
+    ]
+
+    def metric_range(items, key):
+        values = [_float(item.get(key)) for item in items]
+        values = [value for value in values if value is not None]
+        if not values:
+            return None
+        return {"min": min(values), "max": max(values), "mean": _mean(values)}
+
+    return {
+        "success": True,
+        "runs": runs,
+        "summary": {
+            "retained_runs": len(runs),
+            "completed_runs": sum(1 for run in runs if run.get("completed")),
+            "ratings": len(rated),
+            "accepted": len(accepted),
+            "borderline": len(borderline),
+            "unacceptable": len(rejected),
+            "accepted_xpsnr": metric_range(accepted, "xpsnr"),
+            "accepted_ssim": metric_range(accepted, "ssim"),
+            "rejected_xpsnr": metric_range(rejected, "xpsnr"),
+            "rejected_ssim": metric_range(rejected, "ssim"),
+        },
+    }
+
+
+def _rate_calibration(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    label = str(_arg(arguments, "label", "") or "").strip().upper()
+    rating = str(_arg(arguments, "rating", "") or "").strip().lower()
+
+    if not run_id or not label or rating not in _CALIBRATION_RATINGS:
+        return {"success": False, "message": "Invalid calibration rating request."}
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+    result = run.get("result") or {}
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    if label not in candidate_map:
+        return {"success": False, "message": "Calibration candidate was not found."}
+
+    now = time.time()
+    qp = candidate_map[label]
+    with _optimizer_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO calibration_ratings(
+                run_id, candidate_label, qp, rating, created, updated
+            ) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(run_id, candidate_label) DO UPDATE SET
+                qp=excluded.qp,
+                rating=excluded.rating,
+                updated=excluded.updated
+            """,
+            (run_id, label, qp, rating, now, now),
+        )
+
+    refreshed = _load_sample_run(run_id)
+    payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {"success": True, "run": payload}
+
+
+def _safe_calibration_file(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    kind = str(_arg(arguments, "kind", "") or "").strip().lower()
+    sample_index = _int(_arg(arguments, "sample_index", 0))
+    label = str(_arg(arguments, "label", "") or "").strip().upper()
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return None
+    result = run.get("result") or {}
+    samples = result.get("samples") or []
+
+    if kind == "reference":
+        item = next(
+            (
+                sample for sample in samples
+                if int(sample.get("sample_index") or -1) == sample_index
+                and sample.get("reference_file")
+            ),
+            None,
+        )
+        if not item:
+            return None
+        directory = result.get("reference_directory")
+        filename = item.get("reference_file")
+    elif kind == "candidate":
+        candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+        if label not in candidate_map:
+            return None
+        qp = candidate_map[label]
+        item = next(
+            (
+                sample for sample in samples
+                if int(sample.get("sample_index") or -1) == sample_index
+                and int(sample.get("qp") or -1) == qp
+                and sample.get("file")
+            ),
+            None,
+        )
+        if not item:
+            return None
+        directory = result.get("sample_directory")
+        filename = item.get("file")
+    else:
+        return None
+
+    if not directory or not filename:
+        return None
+
+    root = os.path.realpath(directory)
+    path = os.path.realpath(os.path.join(directory, filename))
+    if path != root and not path.startswith(root + os.sep):
+        return None
+    if not os.path.isfile(path):
+        return None
+    return path
+
+
+def _calibration_file(arguments):
+    path = _safe_calibration_file(arguments)
+    if not path:
+        return {"success": False, "message": "Calibration file was not found."}, None
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(), "application/octet-stream"
+    except Exception as exc:
+        logger.exception("Unable to read retained calibration file")
+        return {"success": False, "message": str(exc)}, None
+
+
 def _overview(arguments):
     conn = _metrics_db()
     if conn is None:
@@ -1877,6 +2255,26 @@ def render_frontend_panel(data):
     if path == "samplePlan":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_sample_plan(args), default=str)
+        return data
+
+    if path == "calibrationRuns":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_calibration_runs(), default=str)
+        return data
+
+    if path == "rateCalibration":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_rate_calibration(args), default=str)
+        return data
+
+    if path == "calibrationFile":
+        content, content_type = _calibration_file(args)
+        if content_type:
+            data["content_type"] = content_type
+            data["content"] = content
+        else:
+            data["content_type"] = "application/json"
+            data["content"] = json.dumps(content, default=str)
         return data
 
     if path == "startSampleTest":
