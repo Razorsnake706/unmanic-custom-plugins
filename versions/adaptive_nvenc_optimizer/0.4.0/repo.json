@@ -1,0 +1,30 @@
+{
+    "repo": {
+        "id": "repository.razorsnake706.adaptive_nvenc_optimizer.0.4.0",
+        "name": "Adaptive NVENC Optimizer 0.4.0 (pinned)",
+        "icon": "",
+        "repo_data_directory": "https://raw.githubusercontent.com/Razorsnake706/unmanic-custom-plugins/repo/versions/adaptive_nvenc_optimizer/0.4.0/",
+        "repo_data_url": "https://raw.githubusercontent.com/Razorsnake706/unmanic-custom-plugins/repo/versions/adaptive_nvenc_optimizer/0.4.0/repo.json"
+    },
+    "plugins": [
+        {
+            "author": "Razorsnake706",
+            "compatibility": [
+                1,
+                2
+            ],
+            "description": "Adaptive NVENC calibration and optimization companion for File Size Metrics Plus, with pre-encode reference capture and manual GPU quality testing.",
+            "icon": "https://raw.githubusercontent.com/Unmanic/plugin.video_transcoder/master/icon.png",
+            "id": "adaptive_nvenc_optimizer",
+            "name": "Adaptive NVENC Optimizer",
+            "platform": [
+                "all"
+            ],
+            "priorities": {
+                "on_worker_process": 0
+            },
+            "tags": "data panel nvenc gpu adaptive optimizer analytics",
+            "version": "0.4.0"
+        }
+    ]
+}
