@@ -1661,6 +1661,192 @@ def _rating_rows(run_id):
     return [dict(row) for row in rows]
 
 
+def _save_sample_run_result(run_id, result):
+    with _optimizer_db() as conn:
+        conn.execute(
+            "UPDATE sample_runs SET result_json=? WHERE id=?",
+            (json.dumps(result, default=str), str(run_id)),
+        )
+
+    sample_dir = result.get("sample_directory")
+    if result.get("retained") and sample_dir and os.path.isdir(sample_dir):
+        try:
+            with open(os.path.join(sample_dir, "result.json"), "w", encoding="utf-8") as fh:
+                json.dump(result, fh, indent=2, default=str)
+        except Exception:
+            logger.exception("Unable to update retained calibration result.json")
+
+
+def _quality_target_qps(run_id, result):
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    ratings = _rating_rows(run_id)
+    rating_by_label = {row["candidate_label"]: row["rating"] for row in ratings}
+    if not candidate_map or not all(label in rating_by_label for label in candidate_map):
+        return []
+
+    rating_by_qp = {
+        int(qp): rating_by_label.get(label)
+        for label, qp in candidate_map.items()
+    }
+
+    targets = set()
+    for qp, rating in rating_by_qp.items():
+        if rating == "borderline":
+            targets.add(qp)
+
+    accepted = sorted(
+        qp for qp, rating in rating_by_qp.items()
+        if rating in ("indistinguishable", "acceptable")
+    )
+    rejected = sorted(
+        qp for qp, rating in rating_by_qp.items()
+        if rating == "unacceptable"
+    )
+
+    # Measure the subjective boundary rather than every candidate. Usually this
+    # means the highest acceptable QP and the first unacceptable QP, plus any
+    # candidate explicitly marked borderline.
+    if accepted:
+        targets.add(max(accepted))
+    if rejected:
+        targets.add(min(rejected))
+
+    if not targets:
+        reviewable = sorted(
+            qp for qp, rating in rating_by_qp.items()
+            if rating != "unreviewable"
+        )
+        if reviewable:
+            targets.add(max(reviewable))
+
+    return sorted(targets)
+
+
+def _deferred_quality_worker(run_id, target_qps):
+    started = time.time()
+    try:
+        run = _load_sample_run(run_id)
+        if run is None:
+            raise RuntimeError("Calibration run was not found.")
+
+        result = run.get("result") or {}
+        sample_dir = result.get("sample_directory")
+        reference_dir = result.get("reference_directory")
+        if not sample_dir or not os.path.isdir(sample_dir):
+            raise RuntimeError("Retained candidate clips are no longer available.")
+        if not reference_dir or not os.path.isdir(reference_dir):
+            raise RuntimeError("Retained reference clips are no longer available.")
+
+        samples = result.get("samples") or []
+        work = [
+            sample for sample in samples
+            if _int(sample.get("qp")) in target_qps
+            and sample.get("file")
+            and sample.get("reference_file")
+        ]
+        if not work:
+            raise RuntimeError("No retained boundary candidates were available for objective scoring.")
+
+        result["quality_status"] = "running"
+        result["quality_target_qps"] = list(target_qps)
+        result["quality_total"] = len(work)
+        result["quality_completed"] = 0
+        result["quality_error"] = None
+        _save_sample_run_result(run_id, result)
+
+        completed = 0
+        for sample in work:
+            reference_path = os.path.join(reference_dir, sample["reference_file"])
+            candidate_path = os.path.join(sample_dir, sample["file"])
+            if not os.path.isfile(reference_path) or not os.path.isfile(candidate_path):
+                sample["quality_error"] = "Retained reference/candidate file is missing."
+                completed += 1
+                result["quality_completed"] = completed
+                _save_sample_run_result(run_id, result)
+                continue
+
+            metrics = _run_quality_metrics(
+                reference_path,
+                candidate_path,
+                0.0,
+                _float(sample.get("length")) or _float(result.get("sample_length")) or 30.0,
+            )
+            sample["xpsnr"] = metrics.get("xpsnr")
+            sample["ssim"] = metrics.get("ssim")
+            sample["metric_seconds"] = metrics.get("elapsed") or 0.0
+            sample["quality_error"] = metrics.get("error") if not metrics.get("success") else None
+
+            completed += 1
+            result["quality_completed"] = completed
+            _save_sample_run_result(run_id, result)
+
+        result["qp_summary"] = _aggregate_qp_results(
+            samples,
+            _float(result.get("sample_length")) or 30.0,
+        )
+        result["quality_complete"] = sum(
+            1 for sample in samples
+            if sample.get("xpsnr") is not None and sample.get("ssim") is not None
+        )
+        result["quality_status"] = "complete"
+        result["quality_seconds"] = time.time() - started
+        result["quality_error"] = None
+        _save_sample_run_result(run_id, result)
+    except Exception as exc:
+        logger.exception("Deferred calibration quality scoring failed")
+        run = _load_sample_run(run_id)
+        if run is not None:
+            result = run.get("result") or {}
+            result["quality_status"] = "failed"
+            result["quality_error"] = str(exc)
+            result["quality_seconds"] = time.time() - started
+            _save_sample_run_result(run_id, result)
+    finally:
+        with _quality_job_lock:
+            _quality_jobs.pop(str(run_id), None)
+
+
+def _schedule_deferred_quality(run_id):
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if not result.get("metrics_deferred"):
+        return {"success": True, "scheduled": False, "status": result.get("quality_status") or "complete"}
+
+    target_qps = _quality_target_qps(run_id, result)
+    if not target_qps:
+        result["quality_status"] = "skipped"
+        result["quality_target_qps"] = []
+        result["quality_error"] = "No reviewable calibration boundary was selected."
+        _save_sample_run_result(run_id, result)
+        return {"success": True, "scheduled": False, "status": "skipped"}
+
+    run_key = str(run_id)
+    with _quality_job_lock:
+        if run_key in _quality_jobs:
+            return {"success": True, "scheduled": True, "status": "running", "target_qps": target_qps}
+
+        result["quality_status"] = "queued"
+        result["quality_target_qps"] = list(target_qps)
+        result["quality_total"] = 0
+        result["quality_completed"] = 0
+        result["quality_error"] = None
+        _save_sample_run_result(run_id, result)
+
+        thread = threading.Thread(
+            target=_deferred_quality_worker,
+            args=(run_id, target_qps),
+            name="adaptive-quality-{}".format(run_id),
+            daemon=True,
+        )
+        _quality_jobs[run_key] = thread
+        thread.start()
+
+    return {"success": True, "scheduled": True, "status": "queued", "target_qps": target_qps}
+
+
 def _calibration_run_payload(run):
     result = run.get("result") or {}
     if not run.get("success") or not run.get("keep_files") or not result.get("retained"):
