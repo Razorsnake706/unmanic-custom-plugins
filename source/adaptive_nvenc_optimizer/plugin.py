@@ -1923,6 +1923,65 @@ def _safe_calibration_file(arguments):
     return path
 
 
+
+def _delete_calibration_files(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    removed = []
+    for key, allowed_root in (
+        ("sample_directory", _sample_root()),
+        ("reference_directory", _reference_root()),
+    ):
+        directory = result.get(key)
+        if not directory:
+            continue
+        root = os.path.realpath(allowed_root)
+        path = os.path.realpath(directory)
+        if path != root and not path.startswith(root + os.sep):
+            continue
+        if os.path.isdir(path):
+            try:
+                shutil.rmtree(path)
+                removed.append(path)
+            except Exception as exc:
+                logger.exception("Unable to remove retained calibration directory")
+                return {"success": False, "message": str(exc)}
+
+    capture_id = result.get("reference_capture_id")
+    if capture_id:
+        try:
+            with _optimizer_db() as conn:
+                conn.execute(
+                    """
+                    UPDATE reference_captures
+                    SET status='reviewed_cleanup', keep_files=0, expires=NULL
+                    WHERE id=?
+                    """,
+                    (capture_id,),
+                )
+        except Exception:
+            logger.exception("Unable to mark retained reference capture cleaned up")
+
+    result["retained"] = False
+    result["sample_directory"] = None
+    result["reference_directory"] = None
+    with _optimizer_db() as conn:
+        conn.execute(
+            """
+            UPDATE sample_runs
+            SET keep_files=0, result_json=?
+            WHERE id=?
+            """,
+            (json.dumps(result, default=str), run_id),
+        )
+
+    return {"success": True, "removed": removed}
+
+
 def _calibration_file(arguments):
     path = _safe_calibration_file(arguments)
     if not path:
@@ -2265,6 +2324,11 @@ def render_frontend_panel(data):
     if path == "rateCalibration":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_rate_calibration(args), default=str)
+        return data
+
+    if path == "deleteCalibrationFiles":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_delete_calibration_files(args), default=str)
         return data
 
     if path == "calibrationFile":
