@@ -2288,6 +2288,19 @@ def _delete_calibration_files(arguments):
         except Exception:
             logger.exception("Unable to mark retained reference capture cleaned up")
 
+    bundle_job_id = "bundle-{}".format(run_id)
+    with _bundle_job_lock:
+        bundle_job = _bundle_jobs.pop(bundle_job_id, None)
+    bundle_path = (bundle_job or {}).get("path")
+    if not bundle_path:
+        safe_id = "".join(ch for ch in run_id if ch.isalnum() or ch in ("-", "_"))[:120] or "calibration"
+        bundle_path = os.path.join(_bundle_root(), safe_id + ".zip")
+    try:
+        if bundle_path and os.path.isfile(bundle_path):
+            os.remove(bundle_path)
+    except OSError:
+        logger.exception("Unable to remove cached calibration bundle")
+
     result["retained"] = False
     result["sample_directory"] = None
     result["reference_directory"] = None
@@ -2926,6 +2939,26 @@ def render_frontend_panel(data):
     if path == "deleteCalibrationFiles":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_delete_calibration_files(args), default=str)
+        return data
+
+    if path == "startCalibrationBundle":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_start_calibration_bundle(args), default=str)
+        return data
+
+    if path == "calibrationBundleStatus":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_calibration_bundle_status(args), default=str)
+        return data
+
+    if path == "calibrationBundleFile":
+        content, content_type = _calibration_bundle_file(args)
+        if content_type:
+            data["content_type"] = content_type
+            data["content"] = content
+        else:
+            data["content_type"] = "application/json"
+            data["content"] = json.dumps(content, default=str)
         return data
 
     if path == "calibrationBundle":
