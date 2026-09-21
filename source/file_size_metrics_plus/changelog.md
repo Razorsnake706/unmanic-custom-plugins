@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.8
+
+- Added an **Update plugin** button directly to the File Size Metrics Plus page.
+- The update button refreshes the custom repository cache directly from GitHub, checks the latest version, installs the update through Unmanic, and reloads the panel after a successful update.
+- When one or more history entries are selected, the summary cards at the top now switch to the selected entries instead of the active table filters.
+- The total before/after size chart also switches to the selected entries.
+- Clearing the selection immediately restores the normal filtered summary.
+- Selection summaries work across pages and with Select all matching / Quick select selections.
+
 ## 0.1.7
 
 - Added a **Quick select** menu for mass-selecting useful groups without changing the visible table filters first.
