@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2
+
+- Replaced the Calibration Review modal with an **inline review workspace** to avoid Opera GX/Chromium dialog-transition issues where Open Calibration Review / Review retained clips only closed the sample-test dialog.
+- Open review now scrolls directly to the persistent review workspace containing the subjective quality buttons and clip controls.
+- Retained-run cards now have separate **Open review** and **Download ZIP** buttons.
+- Added a blind **Download all clips (.zip)** bundle containing `Reference.mkv` and Candidate A/B/C/D for every sample position.
+- Individual calibration clip downloads now use an explicit browser Blob download path for better Chromium/Opera compatibility.
+- Reopening a retained run never requires rerunning the GPU candidates; existing clips remain linked to the Metrics Plus record until reviewed/cleaned up.
+
 ## 0.5.1
 
 - Fixed retained calibration runs disappearing from the user's workflow after closing the pre-encode/sample-test dialog. Reopening the same advisor row now detects an existing retained run and offers **Open Calibration Review** instead of making the clips be generated again.
