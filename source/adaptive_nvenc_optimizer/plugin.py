@@ -36,15 +36,22 @@ _sample_active_job = None
 
 class Settings(PluginSettings):
     settings = {
+        "capture_reference_clips": True,
         "keep_sample_files": False,
         "sample_count": 4,
         "tv_sample_seconds": 30,
         "movie_sample_seconds": 45,
+        "reference_retention_hours": 72,
+        "reference_cache_gb": 10,
     }
 
     def __init__(self, *args, **kwargs):
         super(Settings, self).__init__(*args, **kwargs)
         self.form_settings = {
+            "capture_reference_clips": {
+                "label": "Capture pre-encode reference clips",
+                "description": "Recommended ON for GPU video libraries. Captures short stream-copy reference clips before the normal video transcoder replaces the source.",
+            },
             "keep_sample_files": {
                 "label": "Keep calibration/test sample files",
                 "description": "Off by default. Enable only when you want to manually inspect retained HEVC sample files after a test.",
@@ -62,6 +69,16 @@ class Settings(PluginSettings):
             "movie_sample_seconds": {
                 "label": "Movie/long-form sample duration (seconds)",
                 "description": "Used for media one hour or longer. Recommended: 45 seconds.",
+                "input_type": "text",
+            },
+            "reference_retention_hours": {
+                "label": "Uncalibrated reference retention (hours)",
+                "description": "Reference clips that have not been tested are automatically cleaned up after this many hours. Recommended: 72.",
+                "input_type": "text",
+            },
+            "reference_cache_gb": {
+                "label": "Maximum reference cache (GB)",
+                "description": "Soft cap for pre-encode reference clips. Oldest untested captures are removed first when this limit is exceeded. Recommended: 10 GB.",
                 "input_type": "text",
             },
         }
