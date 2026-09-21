@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2
+
+- Added an explicit **Finish review & delete clips** step after subjective review is complete.
+- Clicking **All candidates look indistinguishable** now gives immediate visible feedback that the review was saved and that Adaptive is objectively scoring the highest tested QP.
+- While targeted XPSNR/SSIM scoring is running, the review explains that temporary clips must remain available and that the Finish action will unlock afterward.
+- Once scoring completes, Finish review removes the retained Reference/Candidate clips and cached ZIP while keeping ratings, revealed QP mapping, bitrate data, and objective quality results.
+- If objective scoring fails, the saved ratings remain intact and the user can either finish/clean up or keep clips for troubleshooting.
+- Renamed the previous low-level **Delete retained files** action to the clearer review-completion workflow.
+
 ## 0.7.1
 
 - Fixed a Calibration Review backend crash that occurred after ratings were saved. A stale `excluded_run_ids` reference could make the review list fail to reload, which made other retained reviews appear to disappear and could leave refresh actions looking broken.
