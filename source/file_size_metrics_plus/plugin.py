@@ -1046,8 +1046,22 @@ def _csv(arguments):
     out = io.StringIO()
     w = csv.writer(out)
     cols = [
-        "finish_time", "file_name", "library_name", "success", "worker", "source_codec", "dest_codec",
-        "source_size", "dest_size", "bytes_saved", "percent_saved", "duration", "source_path", "dest_path", "imported",
+        "finish_time", "file_name", "library_name", "success", "worker",
+        "source_codec", "dest_codec", "source_profile", "dest_profile",
+        "source_width", "source_height", "dest_width", "dest_height",
+        "source_pix_fmt", "dest_pix_fmt", "source_bit_depth", "dest_bit_depth",
+        "source_fps", "dest_fps", "source_duration", "dest_duration",
+        "source_total_bitrate", "dest_total_bitrate",
+        "source_video_bitrate", "dest_video_bitrate",
+        "source_audio_bitrate", "dest_audio_bitrate",
+        "source_audio", "dest_audio", "source_format", "dest_format",
+        "source_color_transfer", "dest_color_transfer", "source_hdr", "dest_hdr",
+        "source_audio_streams", "dest_audio_streams", "source_subtitle_streams", "dest_subtitle_streams",
+        "encoder_name", "encoder_rate_control", "encoder_quality", "encoder_preset",
+        "encoder_tune", "encoder_profile", "encoder_lookahead", "encoder_spatial_aq",
+        "encoder_temporal_aq", "encoder_aq_strength", "encoder_hwaccel",
+        "source_size", "dest_size", "bytes_saved", "percent_saved", "duration",
+        "source_path", "dest_path", "imported",
     ]
     w.writerow(cols)
     for row in rows:
