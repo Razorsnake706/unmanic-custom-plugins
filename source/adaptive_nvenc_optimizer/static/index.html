@@ -591,7 +591,7 @@ function renderReviewRun(run){
       '</tr>'
     }).join('');
     $('reviewReveal').classList.add('show');
-    $('deleteReviewFiles').style.display='';
+    $('deleteReviewFiles').style.display=(qStatus==='queued'||qStatus==='running'||qStatus==='pending_review')?'none':'';
   }else{
     $('reviewReveal').classList.remove('show');
     $('reviewRevealRows').innerHTML='';
