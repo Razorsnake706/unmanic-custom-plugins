@@ -13,15 +13,15 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 .banner{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.badge{display:inline-flex;padding:3px 8px;border-radius:99px;background:var(--panel2);font-size:11px;font-weight:800}.learning{background:#3b2f0d;color:#ffd66e}
 .grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:10px;margin-bottom:12px}.card{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:21px;font-weight:850;margin-top:3px}.tiny{font-size:11px;color:var(--muted);margin-top:4px}
 .two{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:12px}.section{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px}.section h2{font-size:15px;margin:0 0 9px}.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}.progress>div{height:100%;background:var(--accent)}.diag-grid{display:flex;gap:7px;flex-wrap:wrap}.diag{padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel2);font-size:12px}
-.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:100%;border-collapse:collapse;min-width:1250px}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1}tbody tr:hover{background:var(--panel2)}.file{font-weight:750;max-width:320px}.muted{color:var(--muted)}.status{font-weight:800}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-.reason{max-width:360px;font-size:12px}.empty{padding:25px;text-align:center;color:var(--muted)}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:1900px;min-width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1}tbody tr:hover{background:var(--panel2)}.file{font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}.muted{color:var(--muted)}.status{font-weight:800;white-space:normal;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.reason{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.empty{padding:25px;text-align:center;color:var(--muted)}
 @media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr)}.two{grid-template-columns:1fr}}@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.1.0</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.1.1</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -60,6 +60,9 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 
 <div class="table-wrap">
 <table>
+<colgroup>
+<col style="width:470px"><col style="width:150px"><col style="width:135px"><col style="width:180px"><col style="width:120px"><col style="width:100px"><col style="width:60px"><col style="width:70px"><col style="width:80px"><col style="width:80px"><col style="width:355px">
+</colgroup>
 <thead><tr>
 <th>File</th><th>Diagnosis</th><th>Saved</th><th>Video bitrate</th><th>Video reduction</th><th>Audio share</th><th>QP</th><th>Preset</th><th>Speed</th><th>Data</th><th>Why</th>
 </tr></thead>
@@ -70,7 +73,7 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.1.0';
+const PLUGIN_VERSION='0.1.1';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
@@ -127,10 +130,14 @@ async function refreshRepo(){
   return await r.json()
 }
 async function installedRecord(){
-  const r=await fetch('/api/v2/plugins/installed',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:0,length:100,search_value:PLUGIN_ID,order_by:'name',order_direction:'asc'})});
-  const d=await readJsonResponse(r);
-  const list=Array.isArray(d.results)?d.results:[];
-  return list.find(x=>x&&x.plugin_id===PLUGIN_ID)||null
+  try{
+    const r=await fetch(base()+'selfRecord?_='+Date.now(),{cache:'no-store'});
+    const d=await readJsonResponse(r);
+    if(!r.ok||!d.success)return null;
+    return d
+  }catch(e){
+    return null
+  }
 }
 async function installedVersion(){const x=await installedRecord();return x&&x.version?x.version:null}
 
