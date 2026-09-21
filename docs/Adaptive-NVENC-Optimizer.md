@@ -237,3 +237,11 @@ Examples include material where the source itself makes compression differences 
 ## Automatic calibration ZIP preparation
 
 For retained human-calibration runs, the blind ZIP now starts building automatically as soon as GPU candidate generation finishes. Calibration Review shows the archive state as pending, building, or ready, including a live file-count progress bar while it is being assembled. Older retained runs without a ZIP also start archive preparation when Calibration Review data is loaded. Clicking **Download ZIP** uses the prepared archive when it is ready rather than starting the build from scratch.
+
+## Coarse-to-fine quality boundary search
+
+The first subjective calibration round now uses a deliberately wider QP spread. For the normal QP 28 baseline, the initial ladder is **28 / 34 / 40 / 46** instead of 28 / 31 / 34 / 37. The goal is not to rank four almost-identical encodes; it is to find the approximate point where visible degradation first appears.
+
+If all blind candidates genuinely look indistinguishable from the reference, use **All candidates look indistinguishable** rather than guessing. Adaptive records every candidate as indistinguishable and treats that run as evidence that the visible quality boundary lies above the highest tested QP for that source. Objective scoring then targets the highest tested candidate so the subjective observation is still paired with a measured result.
+
+Future rounds can use the stored boundary-search metadata to narrow between the highest acceptable and first unacceptable QPs, or extend upward toward QP 51 when no visible boundary is found.
