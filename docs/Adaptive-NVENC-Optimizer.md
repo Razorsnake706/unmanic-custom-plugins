@@ -213,3 +213,9 @@ The rating buttons are:
 - Unreviewable
 
 Rate each candidate once after comparing it against the reference across all sample positions. The real QP mapping remains hidden until all candidates have ratings.
+
+## Browser-compatible review workspace
+
+Calibration Review is rendered inline on the Adaptive page rather than as a second modal dialog. This avoids Chromium/Opera GX behavior where transitioning directly from the sample-test dialog to another modal could leave the review invisible.
+
+Each retained run has two explicit actions: **Open review** and **Download ZIP**. Open review scrolls to the judging workspace with Candidate A/B/C/D rating buttons. Download ZIP downloads the complete blind clip set in one archive. Individual Reference/Candidate download buttons remain available inside the workspace.
