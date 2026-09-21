@@ -1,0 +1,12 @@
+{
+  "author": "Razorsnake706",
+  "compatibility": [1, 2],
+  "description": "GPU-first adaptive NVENC learning and optimization companion for File Size Metrics Plus.",
+  "icon": "https://raw.githubusercontent.com/Unmanic/plugin.video_transcoder/master/icon.png",
+  "id": "adaptive_nvenc_optimizer",
+  "name": "Adaptive NVENC Optimizer",
+  "platform": ["all"],
+  "priorities": {},
+  "tags": "data panel nvenc gpu adaptive optimizer analytics",
+  "version": "0.1.0"
+}
