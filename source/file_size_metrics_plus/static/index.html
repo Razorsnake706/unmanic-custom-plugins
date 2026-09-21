@@ -37,8 +37,8 @@ th{cursor:pointer;position:sticky;top:0;background:var(--panel);z-index:2;user-s
 td.num{text-align:right}.good{color:#18824b}.bad{color:#c33}
 tbody tr[data-id]{cursor:pointer;transition:background .12s ease}
 tbody tr[data-id]:hover{background:var(--hover)}
-.filecell{display:flex;min-width:0;align-items:center;gap:6px}
-.filetext{display:block;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.filecell{display:flex;min-width:0;align-items:center;gap:6px}.filecopy{display:grid;gap:2px;min-width:0}
+.filetext{display:block;overflow:hidden;text-overflow:ellipsis;font-weight:600}.filemeta{font-size:11px;color:var(--muted-text);overflow:hidden;text-overflow:ellipsis}
 .openhint{opacity:.25;color:var(--link);font-size:15px;flex:0 0 auto;transition:opacity .12s ease,transform .12s ease}
 tbody tr[data-id]:hover .filetext{color:var(--link);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
 tbody tr[data-id]:hover .openhint{opacity:1;transform:translateX(2px)}
@@ -59,6 +59,7 @@ dialog{border:0;border-radius:12px;max-width:900px;width:92%;padding:0;backgroun
 dialog::backdrop{background:rgba(0,0,0,.58)}
 .dialog{background:var(--panel);color:var(--text);border-radius:12px;padding:18px;border:1px solid var(--border);max-height:90vh;overflow:auto}
 .dialog h3,.dialog strong,.dialog span{color:inherit}.detail-chart{margin:12px 0 18px;padding:14px;border:1px solid var(--border);border-radius:10px;background:rgba(128,128,128,.05)}
+.detail-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px}.detail-heading h4{margin:0;font-size:15px}.history-list{display:grid;gap:8px}.history-item{border:1px solid var(--border);border-radius:9px;padding:10px;background:rgba(128,128,128,.045)}.history-top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:7px}.history-type{font-size:11px;font-weight:700;padding:3px 7px;border-radius:999px;background:var(--soft)}.history-lines{display:grid;gap:4px;font-size:12px}.history-lines .label{color:var(--muted-text);display:inline-block;min-width:64px}.history-path{white-space:normal;word-break:break-all;color:var(--muted-text)}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.grid div{padding:8px;background:rgba(128,128,128,.08);border-radius:7px}
 .grid span{display:block;font-size:12px;opacity:.65}.grid strong{word-break:break-all}
 @media(max-width:1000px){.top{display:block}.actions{margin-top:10px}.filters .search{flex-basis:100%}}
@@ -71,7 +72,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.2</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.3</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -106,6 +107,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 <select id="change"><option value="all">Any size change</option><option value="saved">Smaller</option><option value="grew">Larger</option><option value="same">Same size</option></select>
 <input id="minPct" type="number" step="0.1" placeholder="Min % saved"><input id="maxPct" type="number" step="0.1" placeholder="Max % saved">
 <button id="apply" class="btn primary">Apply</button><button id="reset" class="btn">Reset</button>
+<label class="btn" title="Combine multiple Unmanic processing passes for the same media file into one row"><input id="combinePasses" type="checkbox" style="margin-right:6px">Combine repeat passes</label>
 </div>
 
 <div class="tabletools">
@@ -156,7 +158,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </section>
 </main>
 
-<dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailChart" class="detail-chart"></div><div id="detailGrid" class="grid"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
+<dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailChart" class="detail-chart"></div><div class="detail-heading"><h4>Selected processing pass</h4><span id="detailPassType" class="history-type"></span></div><div id="detailGrid" class="grid"></div><div class="detail-heading"><h4>Processing history for this media file</h4><span id="historyCount" class="muted"></span></div><div id="historyList" class="history-list"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
 
 <script>
 const $=id=>document.getElementById(id);
