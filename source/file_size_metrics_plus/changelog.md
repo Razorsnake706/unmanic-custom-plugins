@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.15
+
+- Reworked the in-panel updater to schedule self-installation after the current panel request returns, avoiding Tornado tracebacks caused by replacing/reloading the plugin inside its own active update request.
+- The panel now polls the installed version for up to 20 seconds and reloads automatically when the new version is detected.
+- Added update-status reporting while retaining the direct GitHub repository refresh path.
+- No metrics schema or media-processing behavior changed in this release.
+
 ## 0.1.14
 
 - Fixed the in-panel **Update plugin** lookup by querying Unmanic's installed-plugin database directly from the plugin backend instead of searching the Plugins API by display text.
