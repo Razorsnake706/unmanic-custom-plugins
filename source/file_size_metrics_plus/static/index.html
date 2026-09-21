@@ -74,8 +74,8 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.7</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
-  <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="checkUpdates" class="btn">Check plugin updates</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.8</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="updatePlugin" class="btn primary">Update plugin</button><button id="import" class="btn">Import official history</button><button id="export" class="btn">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
 
@@ -90,7 +90,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 
 <section class="panel summary-chart">
   <div class="chart-title">
-    <div><strong>Total File Size Changed</strong><div class="muted">Aggregate before/after sizes for the current filters</div></div>
+    <div><strong>Total File Size Changed</strong><div id="summaryScope" class="muted">Aggregate before/after sizes for the current filters</div></div>
     <div id="totalChangeText" class="muted"></div>
   </div>
   <div class="compare-row"><div class="compare-label">Before</div><div id="totalBeforeVal" class="compare-value">0 B</div><div class="compare-track"><div id="totalBeforeBar" class="compare-fill compare-before"></div></div></div>
@@ -196,6 +196,10 @@ let currentPageIds=[];
 let loadSequence=0;
 let filterTimer=null;
 let latestOptions={libraries:[],codecs:[],workers:[]};
+let filteredSummary=null;
+let selectionSummaryTimer=null;
+let selectionSummarySequence=0;
+const PLUGIN_VERSION='0.1.8';
 
 const humanBytes=v=>{
   if(v===null||v===undefined)return'—';
@@ -240,6 +244,73 @@ function updateTotalChart(s){
   $('totalAfterBar').className='compare-fill '+(after>before?'compare-grow':'compare-after');
   const change=before?((before-after)/before*100):0;
   $('totalChangeText').textContent=humanBytes(Math.abs(before-after))+' '+(after<=before?'saved':'added')+' · '+Math.abs(change).toFixed(1)+'% '+(after<=before?'decrease':'increase')
+}
+
+function renderTopSummary(s,selectionActive){
+  s=s||{};
+  $('mCountLabel').textContent=selectionActive?'Selected tasks':'Processing tasks';
+  $('mCount').textContent=Number(s.count||0).toLocaleString();
+  $('mStatus').textContent=(s.success||0)+' success · '+(s.failed||0)+' failed';
+  $('mBefore').textContent=humanBytes(s.source||0);
+  $('mAfter').textContent=humanBytes(s.dest||0);
+  $('mSaved').textContent=humanBytes(s.saved||0);
+  $('mPct').textContent=pct(s.percent);
+  $('mTime').textContent=humanTime(s.duration||0);
+  $('summaryScope').textContent=selectionActive
+    ? 'Aggregate before/after sizes for the selected entries'
+    : 'Aggregate before/after sizes for the current filters';
+  updateTotalChart(s)
+}
+
+function combineSummaries(parts){
+  const s={count:0,success:0,failed:0,source:0,dest:0,saved:0,duration:0,percent:null};
+  (parts||[]).forEach(function(p){
+    p=p||{};
+    s.count+=Number(p.count||0);
+    s.success+=Number(p.success||0);
+    s.failed+=Number(p.failed||0);
+    s.source+=Number(p.source||0);
+    s.dest+=Number(p.dest||0);
+    s.saved+=Number(p.saved||0);
+    s.duration+=Number(p.duration||0)
+  });
+  s.percent=s.source?((s.source-s.dest)/s.source*100):null;
+  return s
+}
+
+function scheduleSelectionSummary(){
+  clearTimeout(selectionSummaryTimer);
+  if(!selectedIds.size){
+    ++selectionSummarySequence;
+    renderTopSummary(filteredSummary||{},false);
+    return
+  }
+  selectionSummaryTimer=setTimeout(refreshSelectionSummary,100)
+}
+
+async function refreshSelectionSummary(){
+  const seq=++selectionSummarySequence;
+  const ids=Array.from(selectedIds);
+  if(!ids.length){
+    renderTopSummary(filteredSummary||{},false);
+    return
+  }
+  const chunkSize=250;
+  try{
+    const parts=[];
+    for(let i=0;i<ids.length;i+=chunkSize){
+      const chunk=ids.slice(i,i+chunkSize).join(',');
+      const r=await fetch(base()+'selectionSummary?'+new URLSearchParams({ids:chunk}),{cache:'no-store'});
+      const d=await r.json();
+      if(!d.success)throw new Error(d.message||'Unable to summarize selection');
+      parts.push(d.summary||{})
+    }
+    if(seq!==selectionSummarySequence)return;
+    renderTopSummary(combineSummaries(parts),true)
+  }catch(e){
+    if(seq!==selectionSummarySequence)return;
+    notice('Unable to summarize selected entries: '+e.message)
+  }
 }
 
 function base(){return location.pathname.replace(/\/$/,'')+'/'}
@@ -294,13 +365,8 @@ async function load(){
     syncSelect($('worker'),latestOptions.workers||[],'All workers');
     renderQuickSelect(latestOptions);
 
-    const s=d.summary||{};
-    $('mCountLabel').textContent='Processing tasks';
-    $('mCount').textContent=Number(s.count||0).toLocaleString();
-    $('mStatus').textContent=(s.success||0)+' success · '+(s.failed||0)+' failed';
-    $('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);
-    $('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);
-    updateTotalChart(s);
+    filteredSummary=d.summary||{};
+    if(selectedIds.size)scheduleSelectionSummary();else renderTopSummary(filteredSummary,false);
     $('count').textContent=`${d.total||0} matching records`;
     $('selectAllMatching').textContent='Select all '+Number(d.total||0).toLocaleString()+' matching';
     $('selectAllMatching').disabled=!Number(d.total||0);
@@ -525,6 +591,54 @@ async function refreshPluginRepos(showNotice){
   }
 }
 
+function compareVersions(a,b){
+  const pa=String(a||'').split('.').map(function(x){return Number(x)||0});
+  const pb=String(b||'').split('.').map(function(x){return Number(x)||0});
+  const n=Math.max(pa.length,pb.length);
+  for(let i=0;i<n;i++){
+    const av=pa[i]||0,bv=pb[i]||0;
+    if(av>bv)return 1;
+    if(av<bv)return -1
+  }
+  return 0
+}
+
+async function updatePluginDirect(){
+  const btn=$('updatePlugin');
+  const oldText=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='Checking...';
+  try{
+    const result=await refreshPluginRepos(false);
+    if(!result.success)throw new Error(result.message||'Repository refresh failed');
+    const versions=(result.updated||[]).map(function(x){return x.version}).filter(Boolean);
+    const latest=versions[0]||PLUGIN_VERSION;
+    if(compareVersions(latest,PLUGIN_VERSION)<=0){
+      notice('File Size Metrics Plus '+PLUGIN_VERSION+' is already up to date.');
+      return
+    }
+
+    btn.textContent='Updating to '+latest+'...';
+    const body=new URLSearchParams({plugin_id:'file_size_metrics_plus'});
+    const r=await fetch('/api/v1/plugins/install',{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+      body:body.toString()
+    });
+    const d=await r.json();
+    if(!d.success)throw new Error('Unmanic reported that the plugin update failed.');
+
+    notice('Updated File Size Metrics Plus to '+latest+'. Reloading the panel...');
+    setTimeout(function(){location.reload()},1800)
+  }catch(e){
+    notice('Unable to update plugin: '+e.message)
+  }finally{
+    btn.disabled=false;
+    btn.textContent=oldText
+  }
+}
+
 function setupResizers(){
   document.querySelectorAll('.resize-handle').forEach(handle=>{
     const th=handle.closest('th'),name=th.dataset.col;
@@ -555,7 +669,8 @@ function updateSelectionUi(){
   $('selectAllMatching').disabled=state.total===0;
   const pageSelected=currentPageIds.filter(function(id){return selectedIds.has(id)}).length;
   $('selectAllPage').checked=currentPageIds.length>0&&pageSelected===currentPageIds.length;
-  $('selectAllPage').indeterminate=pageSelected>0&&pageSelected<currentPageIds.length
+  $('selectAllPage').indeterminate=pageSelected>0&&pageSelected<currentPageIds.length;
+  scheduleSelectionSummary()
 }
 $('selectAllPage').onchange=function(){
   currentPageIds.forEach(function(id){
@@ -620,7 +735,7 @@ $('deleteSelected').onclick=async function(){
 });
 
 $('refresh').onclick=load;
-$('checkUpdates').onclick=function(){refreshPluginRepos(true)};
+$('updatePlugin').onclick=updatePluginDirect;
 $('reset').onclick=()=>{
   for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';
   $('status').value='all';$('change').value='all';state.page=1;scheduleFilterReload(0)
