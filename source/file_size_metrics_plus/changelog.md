@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.10
+
+- Fixed the **Update plugin** button on current Unmanic builds.
+- Switched self-update installation from the legacy v1 form endpoint to Unmanic's v2 JSON plugin-install API.
+- The updater no longer blindly parses every install response as JSON, preventing the `Unexpected token 'T' / Traceback is not valid JSON` browser error.
+- Added a post-install version verification fallback because updating File Size Metrics Plus can reload its own Python module while the install request is still completing.
+- Repository refresh behavior remains unchanged.
+
 ## 0.1.9
 
 - Expanded Metrics Plus into the data-collection foundation for the planned adaptive NVENC optimizer.
