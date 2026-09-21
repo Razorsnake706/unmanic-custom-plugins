@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.14
+
+- Fixed the in-panel **Update plugin** lookup by querying Unmanic's installed-plugin database directly from the plugin backend instead of searching the Plugins API by display text.
+- Added a dedicated self-record endpoint used by the updater to get the correct installed database-table ID.
+- Added bitrate sanity checks for Matroska metadata so stale inherited `BPS` tags cannot make an encoded video stream appear larger than the entire output file.
+- No media or encoder settings are changed.
+
 ## 0.1.13
 
 - Validation release for the repaired **Update plugin** button.
