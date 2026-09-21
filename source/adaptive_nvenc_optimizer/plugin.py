@@ -1541,11 +1541,15 @@ def _sample_test_status(arguments):
 def _sample_test_settings():
     return {
         "success": True,
+        "capture_reference_clips": bool(settings.get_setting("capture_reference_clips")),
         "keep_sample_files": bool(settings.get_setting("keep_sample_files")),
         "sample_count": _int(settings.get_setting("sample_count")) or 4,
         "tv_sample_seconds": _int(settings.get_setting("tv_sample_seconds")) or 30,
         "movie_sample_seconds": _int(settings.get_setting("movie_sample_seconds")) or 45,
+        "reference_retention_hours": _float(settings.get_setting("reference_retention_hours")) or 72,
+        "reference_cache_gb": _float(settings.get_setting("reference_cache_gb")) or 10,
         "sample_root": _sample_root(),
+        "reference_root": _reference_root(),
     }
 
 
