@@ -317,6 +317,49 @@ def _rowdict(row):
     return dict(row) if row else None
 
 
+def _available_options(conn):
+    """Return filter values independently of the current table filters.
+
+    Libraries come from Unmanic itself so the dropdown is populated even before
+    this plugin has recorded a task for every library. Codec/worker values are
+    merged from all stored metrics, including records outside the current filter.
+    """
+    libraries_by_id = {}
+    try:
+        for lib in Library.get_all_libraries():
+            lib_id = _num(lib.get("id"))
+            if lib_id is None:
+                continue
+            libraries_by_id[lib_id] = {
+                "id": lib_id,
+                "name": lib.get("name") or f"Library {lib_id}",
+            }
+    except Exception:
+        logger.exception("Unable to read Unmanic library list for metrics filters.")
+
+    for row in conn.execute(
+        "SELECT DISTINCT library_id id, COALESCE(library_name,'Library '||library_id) name "
+        "FROM metrics WHERE library_id IS NOT NULL"
+    ).fetchall():
+        row = dict(row)
+        if row.get("id") is not None and row.get("id") not in libraries_by_id:
+            libraries_by_id[row["id"]] = row
+
+    codecs = [r[0] for r in conn.execute(
+        "SELECT codec FROM (SELECT source_codec codec FROM metrics UNION SELECT dest_codec codec FROM metrics) "
+        "WHERE codec IS NOT NULL AND TRIM(codec)<>'' ORDER BY codec"
+    ).fetchall()]
+    workers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT worker FROM metrics WHERE worker IS NOT NULL AND TRIM(worker)<>'' ORDER BY worker"
+    ).fetchall()]
+
+    return {
+        "libraries": sorted(libraries_by_id.values(), key=lambda x: str(x.get("name", "")).lower()),
+        "codecs": codecs,
+        "workers": workers,
+    }
+
+
 def _list_data(arguments):
     where, params = _where(arguments)
     sort_map = {
@@ -341,17 +384,7 @@ def _list_data(arguments):
             "SUM(bytes_saved) saved, SUM(duration) dur FROM metrics" + where,
             params,
         ).fetchone()
-        libraries = [dict(r) for r in conn.execute(
-            "SELECT DISTINCT library_id id, COALESCE(library_name,'Library '||library_id) name FROM metrics "
-            "WHERE library_id IS NOT NULL ORDER BY name"
-        ).fetchall()]
-        codecs = [r[0] for r in conn.execute(
-            "SELECT codec FROM (SELECT source_codec codec FROM metrics UNION SELECT dest_codec codec FROM metrics) "
-            "WHERE codec IS NOT NULL AND codec<>'' ORDER BY codec"
-        ).fetchall()]
-        workers = [r[0] for r in conn.execute(
-            "SELECT DISTINCT worker FROM metrics WHERE worker IS NOT NULL AND worker<>'' ORDER BY worker"
-        ).fetchall()]
+        options = _available_options(conn)
     src = summary["src"] or 0
     dst = summary["dst"] or 0
     return {
@@ -362,7 +395,7 @@ def _list_data(arguments):
             "source": src, "dest": dst, "saved": summary["saved"] or 0,
             "percent": ((src - dst) / src * 100.0) if src else None, "duration": summary["dur"] or 0,
         },
-        "options": {"libraries": libraries, "codecs": codecs, "workers": workers},
+        "options": options,
     }
 
 
