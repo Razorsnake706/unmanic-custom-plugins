@@ -245,3 +245,9 @@ The first subjective calibration round now uses a deliberately wider QP spread. 
 If all blind candidates genuinely look indistinguishable from the reference, use **All candidates look indistinguishable** rather than guessing. Adaptive records every candidate as indistinguishable and treats that run as evidence that the visible quality boundary lies above the highest tested QP for that source. Objective scoring then targets the highest tested candidate so the subjective observation is still paired with a measured result.
 
 Future rounds can use the stored boundary-search metadata to narrow between the highest acceptable and first unacceptable QPs, or extend upward toward QP 51 when no visible boundary is found.
+
+## Review persistence and finalization
+
+Sample generation now has an explicit **finalizing** stage. The job is not reported as complete until its retained calibration run has been written to `adaptive_optimizer.db`, reference retention has been updated, and automatic ZIP preparation has been started. This prevents the Review retained clips action from racing ahead of the saved review record.
+
+Calibration Review reloads preserve all existing retained runs and ratings. A previously fixed loader regression could fail after ratings were present; it did not delete the underlying review data.
