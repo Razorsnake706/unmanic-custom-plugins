@@ -714,7 +714,10 @@ function renderReviewRun(run){
   $('reviewQualityStatus').className='quality-state '+((qStatus==='complete')?'done':((qStatus==='failed')?'failed':((qStatus==='queued'||qStatus==='running')?'running':'')));
   $('reviewQualityStatus').textContent=qualityStatusText(run);
   renderAutoBundleState(run);
-  $('discardCalibrationRun').style.display=(qStatus==='queued'||qStatus==='running')?'none':'';
+  const bundleStatus=(run.bundle||{}).status||'not_started';
+  const busy=(qStatus==='queued'||qStatus==='running'||bundleStatus==='queued'||bundleStatus==='building');
+  $('discardCalibrationRun').style.display=busy?'none':'';
+  $('deleteReviewFiles').disabled=busy;
   $('reviewSamples').innerHTML=(run.samples||[]).map(function(sample){
     const reference=calibrationFileUrl(run.id,'reference',sample.sample_index,'');
     const candidates=(sample.candidates||[]).map(function(item){
@@ -766,7 +769,7 @@ function renderReviewRun(run){
       '</tr>'
     }).join('');
     $('reviewReveal').classList.add('show');
-    $('deleteReviewFiles').style.display=(qStatus==='queued'||qStatus==='running'||qStatus==='pending_review')?'none':'';
+    $('deleteReviewFiles').style.display=(busy||qStatus==='pending_review')?'none':'';
   }else{
     $('reviewReveal').classList.remove('show');
     $('reviewRevealRows').innerHTML='';
