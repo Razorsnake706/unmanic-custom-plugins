@@ -1744,7 +1744,7 @@ def _save_sample_run_result(run_id, result):
 
 
 def _quality_target_qps(run_id, result):
-    if result.get("calibration_excluded"):
+    if result.get("calibration_discarded"):
         return []
     candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
     ratings = _rating_rows(run_id)
@@ -1880,13 +1880,8 @@ def _schedule_deferred_quality(run_id):
         return {"success": False, "message": "Calibration run was not found."}
 
     result = run.get("result") or {}
-    if result.get("calibration_excluded"):
-        if result.get("quality_status") not in ("complete", "running"):
-            result["quality_status"] = "skipped_unsuitable"
-            result["quality_target_qps"] = []
-            result["quality_error"] = None
-            _save_sample_run_result(run_id, result)
-        return {"success": True, "scheduled": False, "status": result.get("quality_status") or "skipped_unsuitable"}
+    if result.get("calibration_discarded"):
+        return {"success": True, "scheduled": False, "status": "discarded"}
     if not result.get("metrics_deferred"):
         return {"success": True, "scheduled": False, "status": result.get("quality_status") or "complete"}
 
@@ -2032,9 +2027,6 @@ def _calibration_run_payload(run):
             for label in sorted(candidate_map)
         },
         "completed": completed,
-        "excluded": bool(result.get("calibration_excluded")),
-        "excluded_reason": result.get("calibration_excluded_reason"),
-        "excluded_at": _float(result.get("calibration_excluded_at")),
         "metrics_deferred": bool(result.get("metrics_deferred")),
         "quality_status": result.get("quality_status") or ("complete" if result.get("quality_complete") else "not_started"),
         "quality_target_qps": result.get("quality_target_qps") or [],
@@ -2096,19 +2088,8 @@ def _calibration_runs():
             """
         ).fetchall()
 
-    excluded_run_ids = set()
-    for run_row in all_successful_runs:
-        try:
-            run_result = json.loads(run_row["result_json"] or "{}")
-        except Exception:
-            run_result = {}
-        if run_result.get("calibration_excluded"):
-            excluded_run_ids.add(run_row["id"])
-
     rating_count_by_run = {}
     for row in rating_rows:
-        if row["run_id"] in excluded_run_ids:
-            continue
         rating_count_by_run[row["run_id"]] = rating_count_by_run.get(row["run_id"], 0) + 1
 
     for run_row in all_successful_runs:
@@ -2238,42 +2219,6 @@ def _rate_calibration(arguments):
         payload = _calibration_run_payload(refreshed) if refreshed else payload
 
     return {"success": True, "run": payload, "quality": quality}
-
-
-def _set_calibration_excluded(arguments):
-    run_id = str(_arg(arguments, "run_id", "") or "").strip()
-    excluded_raw = str(_arg(arguments, "excluded", "1") or "1").strip().lower()
-    excluded = excluded_raw not in ("0", "false", "no", "off")
-    reason = str(_arg(arguments, "reason", "") or "").strip()
-
-    run = _load_sample_run(run_id)
-    if run is None:
-        return {"success": False, "message": "Calibration run was not found."}
-
-    result = run.get("result") or {}
-    if excluded:
-        result["calibration_excluded"] = True
-        result["calibration_excluded_reason"] = (
-            reason or "User marked this source unsuitable for subjective calibration."
-        )[:500]
-        result["calibration_excluded_at"] = time.time()
-        if result.get("quality_status") not in ("complete", "running"):
-            result["quality_status"] = "skipped_unsuitable"
-            result["quality_target_qps"] = []
-            result["quality_error"] = None
-    else:
-        result["calibration_excluded"] = False
-        result["calibration_excluded_reason"] = None
-        result["calibration_excluded_at"] = None
-        if result.get("metrics_deferred") and result.get("quality_status") == "skipped_unsuitable":
-            result["quality_status"] = "pending_review"
-            result["quality_target_qps"] = []
-            result["quality_error"] = None
-
-    _save_sample_run_result(run_id, result)
-    refreshed = _load_sample_run(run_id)
-    payload = _calibration_run_payload(refreshed) if refreshed else None
-    return {"success": True, "run": payload}
 
 
 def _safe_calibration_file(arguments):
@@ -3158,11 +3103,6 @@ def render_frontend_panel(data):
     if path == "calibrationRuns":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_calibration_runs(), default=str)
-        return data
-
-    if path == "setCalibrationExcluded":
-        data["content_type"] = "application/json"
-        data["content"] = json.dumps(_set_calibration_excluded(args), default=str)
         return data
 
     if path == "rateCalibration":
