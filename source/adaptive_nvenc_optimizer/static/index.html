@@ -652,9 +652,10 @@ async function loadCalibrationRuns(showNotice){
         btn.onclick=function(){openCalibrationReview(btn.dataset.openReview)}
       });
       document.querySelectorAll('[data-download-bundle]').forEach(function(btn){
-        btn.onclick=function(){
-          showCalibrationHome();
-          buildAndDownloadCalibrationBundle(btn.dataset.downloadBundle,btn.dataset.filename)
+        btn.onclick=async function(){
+          const runId=btn.dataset.downloadBundle;
+          await openCalibrationReview(runId);
+          buildAndDownloadCalibrationBundle(runId,btn.dataset.filename)
         }
       })
     }
