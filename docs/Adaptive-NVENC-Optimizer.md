@@ -36,9 +36,9 @@ encode only if worthwhile
 
 The full encode remains GPU-first.
 
-## Current phase: Learning Mode
+## Current phase: Learning + calibration preparation
 
-Current releases are deliberately read-only.
+Current releases are deliberately read-only. The reference system has crossed the initial 10-record baseline threshold, so the optimizer now also builds sample-test plans without executing them.
 
 The optimizer reads successful NVENC records from File Size Metrics Plus and calculates telemetry completeness, storage reduction, observed QP, encode speed, output audio share, video bitrate change and candidate priority.
 
@@ -87,6 +87,23 @@ The first development threshold is at least 10 complete NVENC records. This is o
 The FFmpeg build used during development exposes PSNR, SSIM and XPSNR, but not libvmaf.
 
 The planned first quality loop therefore uses **XPSNR + SSIM**. VMAF may be added later if the FFmpeg environment gains libvmaf.
+
+## Sample-test planning
+
+Clicking an Encode Advisor row now builds a read-only plan containing:
+
+- whether the current path still appears to contain the original source;
+- four representative sample positions across the runtime;
+- a bounded QP ladder beginning at the observed QP;
+- the number of short GPU variants that would be encoded;
+- an estimated NVENC test duration based on measured encode speed;
+- the planned objective quality metrics (XPSNR + SSIM).
+
+Historical rows often point to files that Unmanic has already replaced with their HEVC outputs. Those rows are useful for learning compression behavior but are **not safe sources for perceptual calibration**, because the original reference frames no longer exist. This source-availability check is why sample execution is not enabled yet.
+
+## Adjustable advisor columns
+
+Advisor column widths can be dragged directly from the header. Widths are stored in browser local storage and can be restored with **Reset column widths**.
 
 ## Automatic decisions are not enabled yet
 
