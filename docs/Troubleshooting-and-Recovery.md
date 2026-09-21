@@ -34,7 +34,7 @@ update plugin from the normal Plugins page
 
 Once a fixed release is installed, the in-panel updater can be used again.
 
-Modern plugin releases look up their installed Unmanic row from the plugin backend by exact plugin_id, then call Unmanic's normal installed-plugin update route.
+Modern plugin releases refresh the custom repo, then schedule their own installation in a short-delay background thread after the current panel request has already returned. The UI polls the installed version until the reload is complete. This avoids Tornado errors caused by replacing/reloading a plugin while its own HTTP update request is still executing.
 
 ## Metrics Plus database missing
 
