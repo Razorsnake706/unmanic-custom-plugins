@@ -1311,6 +1311,10 @@ def _sample_test_worker(job_id, metric_id):
 
         setting_obj = _library_settings(row.get("library_id"))
         keep_files = bool(setting_obj.get_setting("keep_sample_files"))
+        # Retained runs are human-calibration runs. Generate the GPU candidates
+        # first and defer expensive CPU objective scoring until the blind review
+        # identifies the useful quality boundary.
+        defer_quality = keep_files
         qps = list(plan.get("qp_values") or [])
         nominal_sample_length = _float(plan.get("sample_length")) or 30.0
 
@@ -1339,12 +1343,12 @@ def _sample_test_worker(job_id, metric_id):
             if not check.get("original_available") or not source_path or not os.path.isfile(source_path):
                 raise RuntimeError("The original source is no longer safely available.")
             work_items = []
-            for index, start in enumerate(list(plan.get("sample_starts") or []), 1):
+            for index, sample_start in enumerate(list(plan.get("sample_starts") or []), 1):
                 work_items.append({
                     "sample_index": index,
-                    "display_start": _float(start) or 0.0,
+                    "display_start": _float(sample_start) or 0.0,
                     "source_path": source_path,
-                    "encode_start": _float(start) or 0.0,
+                    "encode_start": _float(sample_start) or 0.0,
                     "length": nominal_sample_length,
                     "reference_file": None,
                 })
@@ -1359,12 +1363,13 @@ def _sample_test_worker(job_id, metric_id):
         _job_update(
             job_id,
             status="running",
-            stage="encoding_and_quality",
+            stage="candidate_encoding" if defer_quality else "encoding_and_quality",
             total=total,
             completed=0,
             keep_files=keep_files,
             sample_directory=job_dir if keep_files else None,
             reference_capture_id=reference_capture_id,
+            metrics_deferred=defer_quality,
         )
 
         samples = []
@@ -1395,13 +1400,22 @@ def _sample_test_worker(job_id, metric_id):
 
                 file_bytes = os.path.getsize(output_path)
                 video_bitrate = (file_bytes * 8.0) / float(test_length)
+                metrics = {
+                    "xpsnr": None,
+                    "ssim": None,
+                    "elapsed": 0.0,
+                    "error": None,
+                }
 
-                xpsnr = _run_quality_metric(
-                    test_source, output_path, encode_start, test_length, "xpsnr"
-                )
-                ssim = _run_quality_metric(
-                    test_source, output_path, encode_start, test_length, "ssim"
-                )
+                if not defer_quality:
+                    _job_update(
+                        job_id,
+                        current="Sample {} QP {} · XPSNR + SSIM".format(sample_index, qp),
+                        completed=completed,
+                    )
+                    metrics = _run_quality_metrics(
+                        test_source, output_path, encode_start, test_length
+                    )
 
                 samples.append({
                     "sample_index": sample_index,
@@ -1414,10 +1428,10 @@ def _sample_test_worker(job_id, metric_id):
                     "video_bitrate": video_bitrate,
                     "encode_seconds": encoded.get("elapsed"),
                     "used_hw_decode": encoded.get("used_hw_decode"),
-                    "xpsnr": xpsnr.get("value"),
-                    "ssim": ssim.get("value"),
-                    "xpsnr_error": xpsnr.get("error") if not xpsnr.get("success") else None,
-                    "ssim_error": ssim.get("error") if not ssim.get("success") else None,
+                    "xpsnr": metrics.get("xpsnr"),
+                    "ssim": metrics.get("ssim"),
+                    "metric_seconds": metrics.get("elapsed") or 0.0,
+                    "quality_error": metrics.get("error") if not metrics.get("success", defer_quality) else None,
                 })
 
                 completed += 1
@@ -1425,8 +1439,8 @@ def _sample_test_worker(job_id, metric_id):
 
         qp_summary = _aggregate_qp_results(samples, nominal_sample_length)
         quality_complete = sum(
-            1 for result in samples
-            if result.get("xpsnr") is not None and result.get("ssim") is not None
+            1 for sample in samples
+            if sample.get("xpsnr") is not None and sample.get("ssim") is not None
         )
 
         result = {
@@ -1441,6 +1455,9 @@ def _sample_test_worker(job_id, metric_id):
             "sample_starts": [item.get("display_start") for item in work_items],
             "qp_values": qps,
             "quality_metrics": ["xpsnr", "ssim"],
+            "metrics_deferred": defer_quality,
+            "quality_status": "pending_review" if defer_quality else "complete",
+            "quality_target_qps": [] if defer_quality else list(qps),
             "quality_complete": quality_complete,
             "variant_count": len(samples),
             "qp_summary": qp_summary,
@@ -1457,7 +1474,7 @@ def _sample_test_worker(job_id, metric_id):
         _job_update(
             job_id,
             status="completed",
-            stage="done",
+            stage="review_ready" if defer_quality else "done",
             finished=finished,
             result=result,
             completed=total,
