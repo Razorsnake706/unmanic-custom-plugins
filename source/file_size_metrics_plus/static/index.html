@@ -227,7 +227,8 @@ function qs(extra={}){
   return new URLSearchParams({
     search:$('search').value,date_from:$('from').value,date_to:$('to').value,status:$('status').value,
     library:$('library').value,source_codec:$('srcCodec').value,dest_codec:$('dstCodec').value,worker:$('worker').value,
-    change:$('change').value,min_percent:$('minPct').value,max_percent:$('maxPct').value,...extra
+    change:$('change').value,min_percent:$('minPct').value,max_percent:$('maxPct').value,
+    combine:$('combinePasses').checked?'1':'0',...extra
   })
 }
 function notice(t){$('notice').textContent=t;$('notice').classList.remove('hidden');setTimeout(()=>$('notice').classList.add('hidden'),6000)}
@@ -281,7 +282,7 @@ async function load(){
     $('rows').innerHTML=(d.items||[]).map(function(x){
       return '<tr data-id="'+x.id+'" title="Click to view full details">'+
         '<td data-col="finish_time">'+esc(date(x.finish_time))+'</td>'+
-        '<td data-col="file_name"><div class="filecell"><span class="filetext">'+esc(x.file_name)+(x.imported?' <span class="muted">(legacy)</span>':'')+'</span><span class="openhint" aria-hidden="true">›</span></div></td>'+
+        '<td data-col="file_name"><div class="filecell"><div class="filecopy"><span class="filetext">'+esc(x.file_name)+(x.imported?' <span class="muted">(legacy)</span>':'')+'</span>'+(x.pass_count>1?'<span class="filemeta">'+esc(x.pass_count+' passes · '+(x.pass_types||[]).join(' + '))+'</span>':'')+'</div><span class="openhint" aria-hidden="true">›</span></div></td>'+
         '<td data-col="library_name">'+esc(x.library_name||'—')+'</td>'+
         '<td data-col="status" class="'+(x.success?'good':'bad')+'">'+(x.success?'Success':'Failed')+'</td>'+
         '<td data-col="source_codec">'+esc(x.source_codec||'—')+'</td>'+
@@ -303,7 +304,12 @@ async function load(){
 
 async function details(id){
   const r=await fetch(base()+'details?'+new URLSearchParams({id}),{cache:'no-store'});
-  const x=(await r.json()).item;if(!x)return;
+  const payload=await r.json();
+  const x=payload.item;if(!x)return;
+  const combined=payload.combined||x;
+  const history=payload.history||[];
+  const selectedType=(history.find(function(h){return String(h.id)===String(x.id)})||{}).pass_type||'Processing';
+
   const fields=[
     ['Finished',date(x.finish_time)],['Status',x.success?'Success':'Failed'],['Library',x.library_name||'—'],['Worker',x.worker||'—'],
     ['Input codec',x.source_codec||'—'],['Output codec',x.dest_codec||'—'],['Input profile',x.source_profile||'—'],['Output profile',x.dest_profile||'—'],
@@ -312,9 +318,28 @@ async function details(id){
     ['Before',humanBytes(x.source_size)],['After',humanBytes(x.dest_size)],['Saved',humanBytes(x.bytes_saved)],['Saved %',pct(x.percent_saved)],
     ['Duration',humanTime(x.duration)],['Source path',x.source_path||'—'],['Destination path',x.dest_path||'—']
   ];
-  $('detailTitle').textContent=x.file_name||'Task details';
-  $('detailChart').innerHTML=comparisonMarkup(x.source_size,x.dest_size);
+
+  $('detailTitle').textContent=combined.file_name||x.file_name||'Task details';
+  $('detailChart').innerHTML=comparisonMarkup(combined.source_size,combined.dest_size);
+  $('detailPassType').textContent=selectedType;
   $('detailGrid').innerHTML=fields.map(function(f){return '<div><span>'+esc(f[0])+'</span><strong>'+esc(f[1])+'</strong></div>'}).join('');
+  $('historyCount').textContent=(history.length||1)+' pass'+((history.length||1)===1?'':'es');
+
+  $('historyList').innerHTML=(history.length?history:[x]).map(function(h){
+    const type=h.pass_type||'Processing';
+    const video=(h.source_codec||'—')+' → '+(h.dest_codec||'—');
+    const audio=(h.source_audio||'—')+' → '+(h.dest_audio||'—');
+    return '<div class="history-item">'+
+      '<div class="history-top"><span class="history-type">'+esc(type)+'</span><span class="muted">'+esc(date(h.finish_time))+'</span></div>'+
+      '<div class="history-lines">'+
+        '<div><span class="label">Library</span>'+esc(h.library_name||'—')+' · '+esc(h.worker||'—')+'</div>'+
+        '<div><span class="label">Video</span>'+esc(video)+'</div>'+
+        '<div><span class="label">Audio</span>'+esc(audio)+'</div>'+
+        '<div><span class="label">Size</span>'+esc(humanBytes(h.source_size))+' → '+esc(humanBytes(h.dest_size))+' ('+esc(pct(h.percent_saved))+' saved)</div>'+
+        '<div class="history-path"><span class="label">Path</span>'+esc(h.dest_path||h.source_path||'—')+'</div>'+
+      '</div></div>'
+  }).join('');
+
   $('details').showModal()
 }
 
@@ -350,7 +375,8 @@ function applyColumnVisibility(){
   const visible=new Set(getVisibleColumns());
   COLUMN_DEFS.forEach(function(def){
     const name=def[0],show=visible.has(name);
-    const col=colElement(name);if(col)col.dataset.hidden=show?'false':'true';
+    const col=colElement(name);
+    if(col){col.dataset.hidden=show?'false':'true';col.style.visibility=show?'visible':'collapse'}
     document.querySelectorAll('[data-col="'+name+'"]').forEach(function(el){
       if(el.tagName!=='COL')el.style.display=show?'':'none'
     })
@@ -405,6 +431,11 @@ function setupResizers(){
 }
 
 $('apply').onclick=()=>{state.page=1;load()};
+$('combinePasses').checked=localStorage.getItem('fileSizeMetricsPlus.combinePasses')==='1';
+$('combinePasses').onchange=()=>{
+  localStorage.setItem('fileSizeMetricsPlus.combinePasses',$('combinePasses').checked?'1':'0');
+  state.page=1;load()
+};
 $('refresh').onclick=load;
 $('reset').onclick=()=>{
   for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';
