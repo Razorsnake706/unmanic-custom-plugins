@@ -269,22 +269,30 @@ async function load(){
     $('mStatus').textContent=`${s.success||0} success · ${s.failed||0} failed`;
     $('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);
     $('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);
+    updateTotalChart(s);
     $('count').textContent=`${d.total||0} matching records`;
     $('page').textContent=`Page ${d.page||1} of ${d.pages||1}`;
     $('prev').disabled=state.page<=1;$('next').disabled=state.page>=state.pages;
 
-    $('rows').innerHTML=(d.items||[]).map(x=>`<tr data-id="${x.id}" title="Click to view full details">
-      <td>${esc(date(x.finish_time))}</td>
-      <td><div class="filecell"><span class="filetext">${esc(x.file_name)}${x.imported?' <span class="muted">(legacy)</span>':''}</span><span class="openhint" aria-hidden="true">›</span></div></td>
-      <td>${esc(x.library_name||'—')}</td>
-      <td class="${x.success?'good':'bad'}">${x.success?'Success':'Failed'}</td>
-      <td>${esc(x.source_codec||'—')}</td><td>${esc(x.dest_codec||'—')}</td>
-      <td>${sizeVisual(x)}</td>
-      <td class="num ${savedClass(x.bytes_saved)}">${esc(humanBytes(x.bytes_saved))}</td>
-      <td class="num ${savedClass(x.bytes_saved)}">${esc(pct(x.percent_saved))}</td>
-      <td>${esc(humanTime(x.duration))}</td><td>${esc(x.worker||'—')}</td>
-    </tr>`).join('')||'<tr><td colspan="11">No records match these filters.</td></tr>';
+    $('rows').innerHTML=(d.items||[]).map(function(x){
+      return '<tr data-id="'+x.id+'" title="Click to view full details">'+
+        '<td data-col="finish_time">'+esc(date(x.finish_time))+'</td>'+
+        '<td data-col="file_name"><div class="filecell"><span class="filetext">'+esc(x.file_name)+(x.imported?' <span class="muted">(legacy)</span>':'')+'</span><span class="openhint" aria-hidden="true">›</span></div></td>'+
+        '<td data-col="library_name">'+esc(x.library_name||'—')+'</td>'+
+        '<td data-col="status" class="'+(x.success?'good':'bad')+'">'+(x.success?'Success':'Failed')+'</td>'+
+        '<td data-col="source_codec">'+esc(x.source_codec||'—')+'</td>'+
+        '<td data-col="dest_codec">'+esc(x.dest_codec||'—')+'</td>'+
+        '<td data-col="size">'+sizeVisual(x)+'</td>'+
+        '<td data-col="bytes_saved" class="num '+savedClass(x.bytes_saved)+'">'+esc(humanBytes(x.bytes_saved))+'</td>'+
+        '<td data-col="percent_saved" class="num '+savedClass(x.bytes_saved)+'">'+esc(pct(x.percent_saved))+'</td>'+
+        '<td data-col="duration">'+esc(humanTime(x.duration))+'</td>'+
+        '<td data-col="worker">'+esc(x.worker||'—')+'</td>'+
+        '<td data-col="source_folder" title="'+esc(folderPath(x.source_path))+'">'+esc(folderPath(x.source_path))+'</td>'+
+        '<td data-col="dest_folder" title="'+esc(folderPath(x.dest_path))+'">'+esc(folderPath(x.dest_path))+'</td>'+
+      '</tr>'
+    }).join('')||'<tr><td colspan="13">No records match these filters.</td></tr>';
 
+    applyColumnVisibility();
     document.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=()=>details(tr.dataset.id))
   }catch(err){notice('Unable to load metrics: '+err.message)}
 }
@@ -295,20 +303,21 @@ async function details(id){
   const fields=[
     ['Finished',date(x.finish_time)],['Status',x.success?'Success':'Failed'],['Library',x.library_name||'—'],['Worker',x.worker||'—'],
     ['Input codec',x.source_codec||'—'],['Output codec',x.dest_codec||'—'],['Input profile',x.source_profile||'—'],['Output profile',x.dest_profile||'—'],
-    ['Input resolution',x.source_width?`${x.source_width}×${x.source_height}`:'—'],['Output resolution',x.dest_width?`${x.dest_width}×${x.dest_height}`:'—'],
+    ['Input resolution',x.source_width?(x.source_width+'×'+x.source_height):'—'],['Output resolution',x.dest_width?(x.dest_width+'×'+x.dest_height):'—'],
     ['Input pixel format',x.source_pix_fmt||'—'],['Output pixel format',x.dest_pix_fmt||'—'],['Input audio',x.source_audio||'—'],['Output audio',x.dest_audio||'—'],
     ['Before',humanBytes(x.source_size)],['After',humanBytes(x.dest_size)],['Saved',humanBytes(x.bytes_saved)],['Saved %',pct(x.percent_saved)],
     ['Duration',humanTime(x.duration)],['Source path',x.source_path||'—'],['Destination path',x.dest_path||'—']
   ];
   $('detailTitle').textContent=x.file_name||'Task details';
-  $('detailGrid').innerHTML=fields.map(f=>`<div><span>${esc(f[0])}</span><strong>${esc(f[1])}</strong></div>`).join('');
+  $('detailChart').innerHTML=comparisonMarkup(x.source_size,x.dest_size);
+  $('detailGrid').innerHTML=fields.map(function(f){return '<div><span>'+esc(f[0])+'</span><strong>'+esc(f[1])+'</strong></div>'}).join('');
   $('details').showModal()
 }
 
 function colElement(name){return document.querySelector(`col[data-col="${name}"]`)}
 function tableWidthFromCols(){
-  const widths=[...document.querySelectorAll('#metricsTable col')].map(c=>parseFloat(c.style.width)||0);
-  $('metricsTable').style.width=Math.max(widths.reduce((a,b)=>a+b,0),700)+'px'
+  const widths=[...document.querySelectorAll('#metricsTable col')].filter(function(col){return col.dataset.hidden!=='true'}).map(function(col){return parseFloat(col.style.width)||0});
+  $('metricsTable').style.width=Math.max(widths.reduce(function(a,b){return a+b},0),520)+'px'
 }
 function loadColumnWidths(){
   let saved={};try{saved=JSON.parse(localStorage.getItem('fileSizeMetricsPlus.columnWidths')||'{}')}catch(e){}
@@ -322,6 +331,57 @@ function saveColumnWidths(){
   const out={};for(const name of Object.keys(DEFAULT_WIDTHS)){const col=colElement(name);if(col)out[name]=parseFloat(col.style.width)||DEFAULT_WIDTHS[name]}
   localStorage.setItem('fileSizeMetricsPlus.columnWidths',JSON.stringify(out))
 }
+function getVisibleColumns(){
+  let saved=null;try{saved=JSON.parse(localStorage.getItem('fileSizeMetricsPlus.visibleColumns')||'null')}catch(e){}
+  const valid=new Set(COLUMN_DEFS.map(function(x){return x[0]}));
+  if(!Array.isArray(saved))return COLUMN_PRESETS.default.slice();
+  const cleaned=saved.filter(function(x){return valid.has(x)});
+  return cleaned.length?cleaned:COLUMN_PRESETS.default.slice()
+}
+function setVisibleColumns(cols){
+  localStorage.setItem('fileSizeMetricsPlus.visibleColumns',JSON.stringify(cols));
+  applyColumnVisibility();renderColumnOptions()
+}
+function applyColumnVisibility(){
+  const visible=new Set(getVisibleColumns());
+  COLUMN_DEFS.forEach(function(def){
+    const name=def[0],show=visible.has(name);
+    const col=colElement(name);if(col)col.dataset.hidden=show?'false':'true';
+    document.querySelectorAll('[data-col="'+name+'"]').forEach(function(el){
+      if(el.tagName!=='COL')el.style.display=show?'':'none'
+    })
+  });
+  tableWidthFromCols()
+}
+function renderColumnOptions(){
+  const visible=new Set(getVisibleColumns());
+  $('columnOptions').innerHTML=COLUMN_DEFS.map(function(def){
+    return '<label><input type="checkbox" data-column-toggle="'+esc(def[0])+'" '+(visible.has(def[0])?'checked':'')+'> '+esc(def[1])+'</label>'
+  }).join('');
+  document.querySelectorAll('[data-column-toggle]').forEach(function(box){
+    box.onchange=function(){
+      const next=new Set(getVisibleColumns());
+      if(box.checked)next.add(box.dataset.columnToggle);else next.delete(box.dataset.columnToggle);
+      if(!next.size){box.checked=true;return}
+      setVisibleColumns(Array.from(next))
+    }
+  })
+}
+function setupColumnPicker(){
+  renderColumnOptions();
+  document.querySelectorAll('[data-preset]').forEach(function(btn){
+    btn.onclick=function(){setVisibleColumns((COLUMN_PRESETS[btn.dataset.preset]||COLUMN_PRESETS.default).slice())}
+  });
+  document.addEventListener('click',function(e){
+    const picker=$('columnPicker');if(picker.open&&!picker.contains(e.target))picker.removeAttribute('open')
+  })
+}
+async function refreshPluginRepos(){
+  try{
+    await fetch('/api/v1/plugins/repos/fetch?_='+Date.now(),{cache:'no-store',credentials:'same-origin'})
+  }catch(e){}
+}
+
 function setupResizers(){
   document.querySelectorAll('.resize-handle').forEach(handle=>{
     const th=handle.closest('th'),name=th.dataset.col;
