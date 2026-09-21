@@ -1619,7 +1619,7 @@ def _overview(arguments):
             task_key = _int(item.get("task_id"))
             if task_key is not None:
                 capture = reference_by_task.get(task_key)
-            if capture is None:
+            else:
                 capture = reference_by_path.get(item.get("source_path"))
             item["reference_ready"] = bool(capture)
             item["reference_clip_count"] = (
