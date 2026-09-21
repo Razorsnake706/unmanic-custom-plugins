@@ -463,7 +463,13 @@ async function pollSampleTest(jobId){
       $('runSampleTest').disabled=false;
       $('runSampleTest').textContent='Run sample test again';
       renderSampleResults(job);
-      loadCalibrationRuns(false);
+      await loadCalibrationRuns(false);
+      const retained=findReviewRun(job.id);
+      if(retained){
+        $('reviewSampleRun').style.display='';
+        $('reviewSampleRun').dataset.run=job.id;
+        $('sampleResultMessage').textContent+=' Calibration Review is ready.';
+      }
       return
     }
     if(job.status==='failed'){
