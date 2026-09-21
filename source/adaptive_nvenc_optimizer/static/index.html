@@ -8,7 +8,7 @@
 :root{color-scheme:light dark;--bg:#f5f7fa;--panel:#fff;--panel2:#f0f3f7;--text:#182230;--muted:#64748b;--border:#d9e0e8;--accent:#0ea5e9;--good:#15803d;--warn:#b45309;--bad:#b42318}
 @media(prefers-color-scheme:dark){:root{--bg:#111820;--panel:#18222e;--panel2:#202b37;--text:#f4f7fb;--muted:#a9b7c6;--border:#324152;--accent:#18a9eb;--good:#4ade80;--warn:#fbbf24;--bad:#fb7185}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.wrap{padding:18px;max-width:1700px;margin:auto}
-header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}h1{font-size:22px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:700}.btn:hover{filter:brightness(1.08)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}.select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 10px;font-weight:700}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}h1{font-size:22px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:700}.btn:hover{filter:brightness(1.08)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.danger{background:#991b1b;border-color:#991b1b;color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}.select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 10px;font-weight:700}
 .notice{display:none;padding:9px 12px;border-radius:7px;background:#17304a;color:#dcefff;margin-bottom:12px}.notice.show{display:block}
 .banner{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.badge{display:inline-flex;padding:3px 8px;border-radius:99px;background:var(--panel2);font-size:11px;font-weight:800}.learning{background:#3b2f0d;color:#ffd66e}
 .grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:10px;margin-bottom:12px}.card{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:21px;font-weight:850;margin-top:3px}.tiny{font-size:11px;color:var(--muted);margin-top:4px}
@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.6.0</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.6.1</div></div>
   <div class="actions"><button id="openCalibrationHub" class="btn">Calibration Review <span id="topReviewCount" class="review-pill">0</span></button><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -110,6 +110,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
         <div class="review-card"><div class="label">Completed reviews</div><div id="reviewCompleteCount" class="value">0</div></div>
         <div class="review-card"><div class="label">Accepted ratings</div><div id="reviewAcceptedCount" class="value">0</div></div>
         <div class="review-card"><div class="label">Unacceptable ratings</div><div id="reviewRejectedCount" class="value">0</div></div>
+        <div class="review-card"><div class="label">Discarded sources</div><div id="reviewDiscardedCount" class="value">0</div></div>
       </div>
       <div id="reviewThresholds" class="sub" style="margin-top:10px">Loading review state…</div>
       <div class="actions" style="margin-top:10px"><button id="refreshReviews" class="btn">Refresh reviews</button></div>
@@ -154,6 +155,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
         </div>
       </div>
       <div class="sample-actions">
+        <button id="discardCalibrationRun" class="btn danger">Discard as unsuitable source</button>
         <button id="deleteReviewFiles" class="btn" style="display:none">Delete retained files</button>
       </div>
     </div>
@@ -200,7 +202,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.6.0';
+const PLUGIN_VERSION='0.6.1';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -619,6 +621,25 @@ function qualityStatusText(run){
   return run.metrics_deferred?'Objective scoring is waiting for the blind review.':'Objective scores were calculated during candidate generation.'
 }
 
+function renderAutoBundleState(run){
+  const bundle=run.bundle||{},status=bundle.status||'not_started';
+  if(status==='queued'||status==='building'){
+    const total=Number(bundle.total||0),done=Number(bundle.completed||0);
+    const percent=total?done/total*100:2;
+    setBundleProgress(true,'Preparing ZIP automatically… '+done+' / '+total+' files',percent,bundle.current||'');
+    return
+  }
+  if(status==='ready'){
+    setBundleProgress(true,'ZIP ready to download',100,bundle.bytes?bytes(bundle.bytes):'');
+    return
+  }
+  if(status==='failed'){
+    setBundleProgress(true,'Automatic ZIP build failed',0,bundle.error||'Use Download all clips to retry.');
+    return
+  }
+  setBundleProgress(false,'',0,'')
+}
+
 async function loadCalibrationRuns(showNotice){
   try{
     const r=await fetch(base()+'calibrationRuns?_='+Date.now(),{cache:'no-store'});
@@ -631,6 +652,7 @@ async function loadCalibrationRuns(showNotice){
     $('reviewCompleteCount').textContent=Number(s.completed_runs||0).toLocaleString();
     $('reviewAcceptedCount').textContent=Number(s.accepted||0).toLocaleString();
     $('reviewRejectedCount').textContent=Number(s.unacceptable||0).toLocaleString();
+    $('reviewDiscardedCount').textContent=Number(s.discarded_runs||0).toLocaleString();
     $('reviewThresholds').textContent=calibrationRangeText(s);
 
     if(!calibrationRuns.length){
@@ -641,10 +663,10 @@ async function loadCalibrationRuns(showNotice){
         const safe=(run.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
         return '<div class="review-run" style="cursor:default">'+
           '<strong>'+(run.completed?'✓ ':'')+esc(run.file_name||run.id)+'</strong>'+
-          '<div class="sub">'+rated+' / '+esc(run.candidate_count)+' candidates rated · '+esc(run.sample_count)+' reference clips</div>'+
+          '<div class="sub">'+rated+' / '+esc(run.candidate_count)+' candidates rated · '+esc(run.sample_count)+' reference clips · '+(run.bundle&&run.bundle.status==='ready'?'ZIP ready':(run.bundle&&['queued','building'].includes(run.bundle.status)?'ZIP building '+esc(run.bundle.completed||0)+' / '+esc(run.bundle.total||0):'ZIP pending'))+'</div>'+
           '<div class="sample-actions" style="margin-top:7px">'+
             '<button class="btn primary" data-open-review="'+esc(run.id)+'">Open review</button>'+
-            '<button class="btn" data-download-bundle="'+esc(run.id)+'" data-filename="'+esc(safe+' - blind calibration clips.zip')+'">Download ZIP</button>'+
+            '<button class="btn" data-download-bundle="'+esc(run.id)+'" data-filename="'+esc(safe+' - blind calibration clips.zip')+'">'+(run.bundle&&run.bundle.status==='ready'?'Download ZIP':'Open ZIP progress')+'</button>'+
           '</div>'+
         '</div>'
       }).join('');
@@ -660,7 +682,10 @@ async function loadCalibrationRuns(showNotice){
       })
     }
     clearTimeout(qualityPollTimer);
-    const active=calibrationRuns.some(function(run){return run.quality_status==='queued'||run.quality_status==='running'});
+    const active=calibrationRuns.some(function(run){
+      const bundle=run.bundle||{};
+      return run.quality_status==='queued'||run.quality_status==='running'||bundle.status==='queued'||bundle.status==='building'
+    });
     if(active){
       qualityPollTimer=setTimeout(async function(){
         const openId=currentReviewRun&&currentReviewRun.id;
@@ -688,6 +713,8 @@ function renderReviewRun(run){
   const qStatus=run.quality_status||'not_started';
   $('reviewQualityStatus').className='quality-state '+((qStatus==='complete')?'done':((qStatus==='failed')?'failed':((qStatus==='queued'||qStatus==='running')?'running':'')));
   $('reviewQualityStatus').textContent=qualityStatusText(run);
+  renderAutoBundleState(run);
+  $('discardCalibrationRun').style.display=(qStatus==='queued'||qStatus==='running')?'none':'';
   $('reviewSamples').innerHTML=(run.samples||[]).map(function(sample){
     const reference=calibrationFileUrl(run.id,'reference',sample.sample_index,'');
     const candidates=(sample.candidates||[]).map(function(item){
@@ -798,6 +825,34 @@ async function saveCalibrationRating(runId,label,rating){
     if(refreshed)renderReviewRun(refreshed)
   }catch(e){
     notice('Unable to save rating: '+e.message)
+  }
+}
+
+async function discardCurrentCalibrationRun(){
+  if(!currentReviewRun)return;
+  const name=currentReviewRun.file_name||'this calibration run';
+  if(!confirm(
+    'Discard '+name+' as an unsuitable calibration source?\n\n'+
+    'It will be excluded from threshold/model learning, and its retained clips/ZIP will be deleted. '+
+    'The historical sample-test record will remain so we know it was intentionally discarded.'
+  ))return;
+
+  try{
+    const params=new URLSearchParams({
+      run_id:currentReviewRun.id,
+      reason:'unsuitable_source',
+      delete_files:'1',
+      _:String(Date.now())
+    });
+    const r=await fetch(base()+'discardCalibrationRun?'+params.toString(),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to discard calibration run');
+    hideReviewOverlay();
+    await loadCalibrationRuns(false);
+    await load(false);
+    notice('Calibration source discarded. It will not be used for quality-threshold learning.')
+  }catch(e){
+    notice('Unable to discard calibration source: '+e.message)
   }
 }
 
@@ -912,6 +967,7 @@ $('downloadReviewBundle').onclick=function(){
   const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
   buildAndDownloadCalibrationBundle(currentReviewRun.id,safe+' - blind calibration clips.zip')
 };
+$('discardCalibrationRun').onclick=discardCurrentCalibrationRun;
 $('deleteReviewFiles').onclick=deleteCurrentReviewFiles;
 loadColumnWidths();
 setupResizers();
