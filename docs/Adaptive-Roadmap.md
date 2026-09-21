@@ -18,9 +18,9 @@ Improve explanations of completed encodes: good compression, audio-limited, alre
 
 ## Phase 3 — Automated sample extraction
 
-Status: **manual execution enabled for safely available originals**
+Status: **pre-encode reference capture implemented; manual execution enabled**
 
-The optimizer calculates representative sample positions and a bounded QP ladder. When the recorded original still exists, a manual test can now execute those short HEVC/NVENC variants without replacing the real media file. XPSNR and SSIM results are persisted for later calibration.
+The optimizer now runs before the normal video transcoder when enabled in the library flow. It stream-copies short reference clips from the untouched source, allowing later manual HEVC/NVENC sample tests even after the full original has been replaced. XPSNR and SSIM results are persisted for later calibration.
 
 Select multiple short clips rather than encoding the whole file repeatedly. The sampler should eventually prefer varied scenes such as low motion, high motion, dark content, detailed scenes and grain/noise when detected.
 
