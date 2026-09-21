@@ -2296,6 +2296,95 @@ def _delete_calibration_files(arguments):
     return {"success": True, "removed": removed}
 
 
+def _calibration_bundle(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}, None
+
+    result = run.get("result") or {}
+    sample_dir = result.get("sample_directory")
+    reference_dir = result.get("reference_directory")
+    if not sample_dir or not os.path.isdir(sample_dir):
+        return {"success": False, "message": "Retained candidate clips are not available."}, None
+    if not reference_dir or not os.path.isdir(reference_dir):
+        return {"success": False, "message": "Retained reference clips are not available."}, None
+
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    samples = result.get("samples") or []
+
+    buffer = io.BytesIO()
+    try:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+            instructions = (
+                "Adaptive NVENC Optimizer blind calibration bundle\n\n"
+                "Compare each Candidate A/B/C/D against the Reference across all sample folders.\n"
+                "The candidate-to-QP mapping is intentionally not included until ratings are complete.\n"
+                "Return to the Adaptive NVENC Optimizer Calibration Review panel to rate each candidate.\n"
+            )
+            archive.writestr("README.txt", instructions)
+
+            sample_indexes = sorted({
+                int(item.get("sample_index"))
+                for item in samples
+                if item.get("sample_index") is not None
+            })
+            for sample_index in sample_indexes:
+                sample_item = next(
+                    (
+                        item for item in samples
+                        if int(item.get("sample_index") or -1) == sample_index
+                        and item.get("reference_file")
+                    ),
+                    None,
+                )
+                if not sample_item:
+                    continue
+
+                reference_path = os.path.realpath(
+                    os.path.join(reference_dir, sample_item.get("reference_file"))
+                )
+                reference_root = os.path.realpath(reference_dir)
+                if (
+                    (reference_path == reference_root or reference_path.startswith(reference_root + os.sep))
+                    and os.path.isfile(reference_path)
+                ):
+                    archive.write(
+                        reference_path,
+                        arcname="Sample {:02d}/Reference.mkv".format(sample_index),
+                    )
+
+                for label in sorted(candidate_map):
+                    qp = candidate_map[label]
+                    candidate_item = next(
+                        (
+                            item for item in samples
+                            if int(item.get("sample_index") or -1) == sample_index
+                            and int(item.get("qp") or -1) == qp
+                            and item.get("file")
+                        ),
+                        None,
+                    )
+                    if not candidate_item:
+                        continue
+                    candidate_path = os.path.realpath(
+                        os.path.join(sample_dir, candidate_item.get("file"))
+                    )
+                    candidate_root = os.path.realpath(sample_dir)
+                    if (
+                        (candidate_path == candidate_root or candidate_path.startswith(candidate_root + os.sep))
+                        and os.path.isfile(candidate_path)
+                    ):
+                        archive.write(
+                            candidate_path,
+                            arcname="Sample {:02d}/Candidate {}.mkv".format(sample_index, label),
+                        )
+        return buffer.getvalue(), "application/zip"
+    except Exception as exc:
+        logger.exception("Unable to build calibration ZIP bundle")
+        return {"success": False, "message": str(exc)}, None
+
+
 def _calibration_file(arguments):
     path = _safe_calibration_file(arguments)
     if not path:
@@ -2643,6 +2732,16 @@ def render_frontend_panel(data):
     if path == "deleteCalibrationFiles":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_delete_calibration_files(args), default=str)
+        return data
+
+    if path == "calibrationBundle":
+        content, content_type = _calibration_bundle(args)
+        if content_type:
+            data["content_type"] = content_type
+            data["content"] = content
+        else:
+            data["content_type"] = "application/json"
+            data["content"] = json.dumps(content, default=str)
         return data
 
     if path == "calibrationFile":
