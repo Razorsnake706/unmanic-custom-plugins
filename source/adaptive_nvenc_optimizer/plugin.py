@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import hashlib
+import io
 import json
 import math
 import os
@@ -11,6 +12,7 @@ import statistics
 import subprocess
 import shutil
 import uuid
+import zipfile
 import time
 import threading
 
