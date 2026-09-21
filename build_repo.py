@@ -12,6 +12,25 @@ OWNER = "Razorsnake706"
 REPO = "unmanic-custom-plugins"
 BRANCH = "repo"
 
+
+def current_release_notes(changelog_text, version):
+    """Return only the changelog section for the requested version."""
+    lines = changelog_text.splitlines()
+    heading = "## {}".format(version)
+    start = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        if line.strip() == heading:
+            start = idx
+            continue
+        if start is not None and idx > start and line.startswith("## "):
+            end = idx
+            break
+    if start is None:
+        return changelog_text.strip() + "\n"
+    return "\n".join(lines[start:end]).strip() + "\n"
+
+
 if DIST.exists():
     shutil.rmtree(DIST)
 DIST.mkdir()
@@ -70,6 +89,17 @@ for plugin_dir in sorted(p for p in SRC.iterdir() if p.is_dir()):
         hashlib.md5(version_text.encode()).hexdigest()
     )
 
+    release_notes_dir = DIST / "release-notes"
+    release_notes_dir.mkdir(parents=True, exist_ok=True)
+    release_notes_path = release_notes_dir / "{}-{}.md".format(plugin_id, version)
+    changelog_path = plugin_dir / "changelog.md"
+    if changelog_path.exists():
+        release_notes_path.write_text(
+            current_release_notes(changelog_path.read_text(), version)
+        )
+    else:
+        release_notes_path.write_text("## {}\n\n- Release {}.\n".format(version, version))
+
     release_manifest.append({
         "plugin_id": plugin_id,
         "name": info.get("name", plugin_id),
@@ -78,6 +108,7 @@ for plugin_dir in sorted(p for p in SRC.iterdir() if p.is_dir()):
         "zip": str(zip_path.relative_to(DIST)),
         "changelog": str((plugin_dir / "changelog.md").relative_to(ROOT))
             if (plugin_dir / "changelog.md").exists() else "",
+        "release_notes": str(release_notes_path.relative_to(DIST)),
         "pinned_repo": version_repo_url + "repo.json",
     })
 
