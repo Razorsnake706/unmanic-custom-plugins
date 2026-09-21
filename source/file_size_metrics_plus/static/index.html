@@ -4,13 +4,72 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>File Size Metrics Plus</title>
 <style>
-:root{font-family:Inter,system-ui,sans-serif;color:#18202a;background:#f4f6f8}html.dark{color:#e7edf4;background:#11161d}*{box-sizing:border-box}body{margin:0;background:inherit;color:inherit}.wrap{max-width:1500px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:18px}.top h1{margin:2px 0 6px;font-size:28px}.muted{opacity:.68}.actions,.filters{display:flex;flex-wrap:wrap;gap:8px}.btn,input,select{border:1px solid #c8d0d9;border-radius:7px;padding:8px 10px;background:#fff;color:#17202a}.dark .btn,.dark input,.dark select{background:#1a222c;color:#e7edf4;border-color:#394654}.btn{cursor:pointer}.primary{background:#2676d8;color:white;border-color:#2676d8}.cards{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:10px;margin:14px 0}.card,.panel{background:#fff;border:1px solid #dce2e8;border-radius:10px;padding:14px}.dark .card,.dark .panel{background:#171e27;border-color:#303a46}.metric{font-size:23px;font-weight:700;margin-top:4px}.filters{margin-bottom:12px}.filters input,.filters select{min-width:130px}.filters .search{min-width:240px;flex:1}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px;border-bottom:1px solid #e4e8ed;text-align:left;white-space:nowrap}.dark th,.dark td{border-color:#2e3844}th{cursor:pointer;position:sticky;top:0;background:inherit}td.num{text-align:right}.good{color:#18824b}.bad{color:#c33}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px}.notice{margin:10px 0;padding:10px;border-radius:8px;background:#eaf2ff}.dark .notice{background:#1d314b}.hidden{display:none}dialog{border:0;border-radius:12px;max-width:850px;width:90%;padding:0;background:transparent}.dialog{background:#fff;color:#18202a;border-radius:12px;padding:18px}.dark .dialog{background:#171e27;color:#e7edf4}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.grid div{padding:8px;background:rgba(128,128,128,.08);border-radius:7px}.grid span{display:block;font-size:12px;opacity:.65}.grid strong{word-break:break-all}@media(max-width:1000px){.cards{grid-template-columns:repeat(2,1fr)}.top{display:block}.actions{margin-top:10px}}@media(max-width:650px){.grid{grid-template-columns:1fr}}
+:root{
+  font-family:Inter,system-ui,sans-serif;color:#18202a;background:#f4f6f8;
+  --panel:#fff;--border:#dce2e8;--soft:#eef2f6;--hover:#f2f7fd;
+  --before:#4f8ddf;--after:#36a269;--grow:#d35b5b;--link:#236fca;
+}
+html.dark{
+  color:#e7edf4;background:#11161d;--panel:#171e27;--border:#303a46;
+  --soft:#202a35;--hover:#1e2b39;--link:#72afff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:inherit;color:inherit}
+.wrap{width:100%;max-width:none;margin:0;padding:clamp(12px,2vw,24px)}
+.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:18px}
+.top h1{margin:2px 0 6px;font-size:28px}.muted{opacity:.68}
+.actions,.filters{display:flex;flex-wrap:wrap;gap:8px}
+.btn,input,select{border:1px solid #c8d0d9;border-radius:7px;padding:8px 10px;background:#fff;color:#17202a}
+.dark .btn,.dark input,.dark select{background:#1a222c;color:#e7edf4;border-color:#394654}
+.btn{cursor:pointer}.primary{background:#2676d8;color:white;border-color:#2676d8}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.card,.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+.metric{font-size:23px;font-weight:700;margin-top:4px}
+.filters{margin-bottom:10px}.filters input,.filters select{min-width:128px}.filters .search{min-width:220px;flex:1}
+.tabletools{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:8px 0 6px;font-size:12px}
+.tablewrap{overflow-x:auto;overflow-y:visible;max-width:100%;padding-bottom:6px;scrollbar-gutter:stable}
+table{border-collapse:collapse;table-layout:fixed;width:1315px;min-width:100%;font-size:13px}
+th,td{padding:9px;border-bottom:1px solid #e4e8ed;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dark th,.dark td{border-color:#2e3844}
+th{cursor:pointer;position:sticky;top:0;background:var(--panel);z-index:2;user-select:none}
+td.num{text-align:right}.good{color:#18824b}.bad{color:#c33}
+tbody tr[data-id]{cursor:pointer;transition:background .12s ease}
+tbody tr[data-id]:hover{background:var(--hover)}
+.filecell{display:flex;min-width:0;align-items:center;gap:6px}
+.filetext{display:block;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.openhint{opacity:.25;color:var(--link);font-size:15px;flex:0 0 auto;transition:opacity .12s ease,transform .12s ease}
+tbody tr[data-id]:hover .filetext{color:var(--link);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+tbody tr[data-id]:hover .openhint{opacity:1;transform:translateX(2px)}
+.resize-handle{position:absolute;right:-3px;top:0;width:8px;height:100%;cursor:col-resize;z-index:4}
+.resize-handle:after{content:"";position:absolute;right:3px;top:20%;height:60%;border-right:1px solid rgba(128,128,128,.42)}
+.sizecell{display:grid;gap:4px;min-width:0}
+.sizeline{display:grid;grid-template-columns:16px 70px 1fr;align-items:center;gap:5px}
+.sizeline .tag{font-size:10px;opacity:.65;font-weight:700}.sizeline .val{text-align:right;font-variant-numeric:tabular-nums}
+.bartrack{height:6px;background:var(--soft);border-radius:999px;overflow:hidden;min-width:32px}
+.barfill{height:100%;border-radius:999px}.bar-before{background:var(--before)}.bar-after{background:var(--after)}.bar-grow{background:var(--grow)}
+.legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:4px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.before{background:var(--before)}.dot.after{background:var(--after)}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.notice{margin:10px 0;padding:10px;border-radius:8px;background:#eaf2ff}.dark .notice{background:#1d314b}.hidden{display:none}
+dialog{border:0;border-radius:12px;max-width:850px;width:90%;padding:0;background:transparent}
+.dialog{background:var(--panel);color:inherit;border-radius:12px;padding:18px;border:1px solid var(--border)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.grid div{padding:8px;background:rgba(128,128,128,.08);border-radius:7px}
+.grid span{display:block;font-size:12px;opacity:.65}.grid strong{word-break:break-all}
+@media(max-width:1000px){.top{display:block}.actions{margin-top:10px}.filters .search{flex-basis:100%}}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.pager{gap:8px;align-items:flex-start;flex-direction:column}.tabletools{align-items:flex-start;flex-direction:column}}
 </style>
-<script>const p=new URLSearchParams(location.search);if(p.get('theme')==='dark')document.documentElement.className='dark';</script>
+<script>
+const themeParams=new URLSearchParams(location.search);
+if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
+</script>
 </head>
 <body><main class="wrap">
-<div class="top"><div><div class="muted">Unmanic Data Panel</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div><div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div></div>
+<div class="top">
+  <div><div class="muted">Unmanic Data Panel</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
+</div>
 <div id="notice" class="notice hidden"></div>
+
 <section class="cards">
 <div class="card"><div class="muted">Files</div><div id="mCount" class="metric">0</div><div id="mStatus" class="muted"></div></div>
 <div class="card"><div class="muted">Before</div><div id="mBefore" class="metric">0 B</div></div>
@@ -19,6 +78,7 @@
 <div class="card"><div class="muted">Reduction</div><div id="mPct" class="metric">—</div></div>
 <div class="card"><div class="muted">Processing time</div><div id="mTime" class="metric">0s</div></div>
 </section>
+
 <section class="panel">
 <div class="filters">
 <input id="search" class="search" placeholder="Search filename or path">
@@ -32,27 +92,209 @@
 <input id="minPct" type="number" step="0.1" placeholder="Min % saved"><input id="maxPct" type="number" step="0.1" placeholder="Max % saved">
 <button id="apply" class="btn primary">Apply</button><button id="reset" class="btn">Reset</button>
 </div>
-<div class="tablewrap"><table><thead><tr>
-<th data-sort="finish_time">Finished</th><th data-sort="file_name">File</th><th data-sort="library_name">Library</th><th>Status</th><th data-sort="source_codec">Input</th><th data-sort="dest_codec">Output</th><th data-sort="source_size">Before</th><th data-sort="dest_size">After</th><th data-sort="bytes_saved">Saved</th><th data-sort="percent_saved">%</th><th data-sort="duration">Time</th><th data-sort="worker">Worker</th>
-</tr></thead><tbody id="rows"></tbody></table></div>
+
+<div class="tabletools">
+  <div class="legend muted">
+    <span><i class="dot before"></i>Before</span><span><i class="dot after"></i>After</span>
+    <span>• Click any file row for full details</span><span>• Drag column dividers to resize</span>
+  </div>
+  <button id="resetCols" class="btn">Reset column widths</button>
+</div>
+
+<div class="tablewrap"><table id="metricsTable">
+<colgroup>
+<col data-col="finish_time" style="width:150px"><col data-col="file_name" style="width:300px"><col data-col="library_name" style="width:120px"><col data-col="status" style="width:80px"><col data-col="source_codec" style="width:70px"><col data-col="dest_codec" style="width:70px"><col data-col="size" style="width:200px"><col data-col="bytes_saved" style="width:95px"><col data-col="percent_saved" style="width:65px"><col data-col="duration" style="width:80px"><col data-col="worker" style="width:85px">
+</colgroup>
+<thead><tr>
+<th data-col="finish_time" data-sort="finish_time">Finished<span class="resize-handle"></span></th>
+<th data-col="file_name" data-sort="file_name">File<span class="resize-handle"></span></th>
+<th data-col="library_name" data-sort="library_name">Library<span class="resize-handle"></span></th>
+<th data-col="status">Status<span class="resize-handle"></span></th>
+<th data-col="source_codec" data-sort="source_codec">Input<span class="resize-handle"></span></th>
+<th data-col="dest_codec" data-sort="dest_codec">Output<span class="resize-handle"></span></th>
+<th data-col="size" data-sort="source_size">Before → After<span class="resize-handle"></span></th>
+<th data-col="bytes_saved" data-sort="bytes_saved">Saved<span class="resize-handle"></span></th>
+<th data-col="percent_saved" data-sort="percent_saved">%<span class="resize-handle"></span></th>
+<th data-col="duration" data-sort="duration">Time<span class="resize-handle"></span></th>
+<th data-col="worker" data-sort="worker">Worker<span class="resize-handle"></span></th>
+</tr></thead><tbody id="rows"></tbody>
+</table></div>
+
 <div class="pager"><div id="count" class="muted"></div><div><button id="prev" class="btn">Previous</button> <span id="page"></span> <button id="next" class="btn">Next</button></div></div>
 </section>
 </main>
+
 <dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailGrid" class="grid"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
+
 <script>
-const $=id=>document.getElementById(id);let state={page:1,pages:1,sort:'finish_time',dir:'desc',loaded:false};
-const humanBytes=v=>{if(v===null||v===undefined)return'—';let n=Number(v),s=n<0?'-':'';n=Math.abs(n);let u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return s+n.toFixed(i>=3?2:i===2?1:0)+' '+u[i]};
-const humanTime=v=>{if(v===null||v===undefined)return'—';let s=Math.max(0,Math.round(v)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`};
+const $=id=>document.getElementById(id);
+const DEFAULT_WIDTHS={finish_time:150,file_name:300,library_name:120,status:80,source_codec:70,dest_codec:70,size:200,bytes_saved:95,percent_saved:65,duration:80,worker:85};
+let state={page:1,pages:1,sort:'finish_time',dir:'desc'};
+
+const humanBytes=v=>{
+  if(v===null||v===undefined)return'—';
+  let n=Number(v),s=n<0?'-':'';n=Math.abs(n);let u=['B','KB','MB','GB','TB'],i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++}
+  return s+n.toFixed(i>=3?2:i===2?1:0)+' '+u[i]
+};
+const humanTime=v=>{
+  if(v===null||v===undefined)return'—';
+  let s=Math.max(0,Math.round(v)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;
+  return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`
+};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const date=v=>v?new Date(Number(v)*1000).toLocaleString():'—';const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
-function base(){return location.pathname.replace(/\/$/,'')+'/'}function qs(extra={}){let p=new URLSearchParams({search:$('search').value,date_from:$('from').value,date_to:$('to').value,status:$('status').value,library:$('library').value,source_codec:$('srcCodec').value,dest_codec:$('dstCodec').value,worker:$('worker').value,change:$('change').value,min_percent:$('minPct').value,max_percent:$('maxPct').value,...extra});return p}
+const date=v=>v?new Date(Number(v)*1000).toLocaleString():'—';
+const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
+
+function base(){return location.pathname.replace(/\/$/,'')+'/'}
+function qs(extra={}){
+  return new URLSearchParams({
+    search:$('search').value,date_from:$('from').value,date_to:$('to').value,status:$('status').value,
+    library:$('library').value,source_codec:$('srcCodec').value,dest_codec:$('dstCodec').value,worker:$('worker').value,
+    change:$('change').value,min_percent:$('minPct').value,max_percent:$('maxPct').value,...extra
+  })
+}
 function notice(t){$('notice').textContent=t;$('notice').classList.remove('hidden');setTimeout(()=>$('notice').classList.add('hidden'),6000)}
-function fill(sel,items,valueKey=''){if(state.loaded)return;for(const x of items){let o=document.createElement('option');o.value=valueKey?x[valueKey]:x;o.textContent=x.name||x;sel.appendChild(o)}}
-async function load(){let r=await fetch(base()+'list?'+qs({page:state.page,page_size:50,sort:state.sort,dir:state.dir}));let d=await r.json();state.pages=d.pages||1;if(!state.loaded){fill($('library'),d.options.libraries||[],'id');fill($('srcCodec'),d.options.codecs||[]);fill($('dstCodec'),d.options.codecs||[]);fill($('worker'),d.options.workers||[]);state.loaded=true}let s=d.summary||{};$('mCount').textContent=Number(s.count||0).toLocaleString();$('mStatus').textContent=`${s.success||0} success · ${s.failed||0} failed`;$('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);$('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);$('count').textContent=`${d.total||0} matching records`;$('page').textContent=`Page ${d.page||1} of ${d.pages||1}`;$('prev').disabled=state.page<=1;$('next').disabled=state.page>=state.pages;
-$('rows').innerHTML=(d.items||[]).map(x=>`<tr data-id="${x.id}"><td>${esc(date(x.finish_time))}</td><td>${esc(x.file_name)}${x.imported?' <span class="muted">(legacy)</span>':''}</td><td>${esc(x.library_name||'—')}</td><td class="${x.success?'good':'bad'}">${x.success?'Success':'Failed'}</td><td>${esc(x.source_codec||'—')}</td><td>${esc(x.dest_codec||'—')}</td><td class="num">${esc(humanBytes(x.source_size))}</td><td class="num">${esc(humanBytes(x.dest_size))}</td><td class="num">${esc(humanBytes(x.bytes_saved))}</td><td class="num">${esc(pct(x.percent_saved))}</td><td>${esc(humanTime(x.duration))}</td><td>${esc(x.worker||'—')}</td></tr>`).join('')||'<tr><td colspan="12">No records match these filters.</td></tr>';document.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=()=>details(tr.dataset.id))}
-async function details(id){let r=await fetch(base()+'details?'+new URLSearchParams({id}));let x=(await r.json()).item;if(!x)return;let fields=[['Finished',date(x.finish_time)],['Status',x.success?'Success':'Failed'],['Library',x.library_name||'—'],['Worker',x.worker||'—'],['Input codec',x.source_codec||'—'],['Output codec',x.dest_codec||'—'],['Input profile',x.source_profile||'—'],['Output profile',x.dest_profile||'—'],['Input resolution',x.source_width?`${x.source_width}×${x.source_height}`:'—'],['Output resolution',x.dest_width?`${x.dest_width}×${x.dest_height}`:'—'],['Input pixel format',x.source_pix_fmt||'—'],['Output pixel format',x.dest_pix_fmt||'—'],['Input audio',x.source_audio||'—'],['Output audio',x.dest_audio||'—'],['Before',humanBytes(x.source_size)],['After',humanBytes(x.dest_size)],['Saved',humanBytes(x.bytes_saved)],['Saved %',pct(x.percent_saved)],['Duration',humanTime(x.duration)],['Source path',x.source_path||'—'],['Destination path',x.dest_path||'—']];$('detailTitle').textContent=x.file_name||'Task details';$('detailGrid').innerHTML=fields.map(f=>`<div><span>${esc(f[0])}</span><strong>${esc(f[1])}</strong></div>`).join('');$('details').showModal()}
-$('apply').onclick=()=>{state.page=1;load()};$('refresh').onclick=load;$('reset').onclick=()=>{for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';$('status').value='all';$('change').value='all';state.page=1;load()};$('prev').onclick=()=>{if(state.page>1){state.page--;load()}};$('next').onclick=()=>{if(state.page<state.pages){state.page++;load()}};$('close').onclick=()=>$('details').close();
-document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>{let n=th.dataset.sort;if(state.sort===n)state.dir=state.dir==='asc'?'desc':'asc';else{state.sort=n;state.dir='desc'}state.page=1;load()});
-$('import').onclick=async()=>{if(!confirm('Import existing history from the official File Size Metrics plugin? Existing imported rows will be skipped.'))return;let r=await fetch(base()+'importLegacy');let d=await r.json();notice(d.message||'Import complete');state.loaded=false;for(const id of['library','srcCodec','dstCodec','worker'])while($(id).options.length>1)$(id).remove(1);load()};
-$('export').onclick=async()=>{let r=await fetch(base()+'export?'+qs());let b=await r.blob();let a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='unmanic-file-size-metrics.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};load();
-</script></body></html>
+function syncSelect(sel,items,placeholder,valueKey=''){
+  const current=String(sel.value??'');sel.innerHTML='';
+  const first=document.createElement('option');first.value='';first.textContent=placeholder;sel.appendChild(first);
+  for(const x of items||[]){
+    const o=document.createElement('option');
+    o.value=String(valueKey?x[valueKey]:x);
+    o.textContent=String((x&&x.name)||x);
+    sel.appendChild(o)
+  }
+  if([...sel.options].some(o=>o.value===current))sel.value=current
+}
+function sizeVisual(x){
+  const before=Number(x.source_size),after=Number(x.dest_size);
+  if(!Number.isFinite(before)&&!Number.isFinite(after))return'<span class="muted">—</span>';
+  const max=Math.max(Number.isFinite(before)?before:0,Number.isFinite(after)?after:0,1);
+  const bw=Number.isFinite(before)?Math.max(2,before/max*100):0;
+  const aw=Number.isFinite(after)?Math.max(2,after/max*100):0;
+  const grew=Number.isFinite(before)&&Number.isFinite(after)&&after>before;
+  return `<div class="sizecell">
+    <div class="sizeline"><span class="tag">B</span><span class="val">${esc(humanBytes(x.source_size))}</span><span class="bartrack"><span class="barfill bar-before" style="display:block;width:${bw}%"></span></span></div>
+    <div class="sizeline"><span class="tag">A</span><span class="val">${esc(humanBytes(x.dest_size))}</span><span class="bartrack"><span class="barfill ${grew?'bar-grow':'bar-after'}" style="display:block;width:${aw}%"></span></span></div>
+  </div>`
+}
+function savedClass(v){return Number(v)>0?'good':Number(v)<0?'bad':''}
+
+async function load(){
+  try{
+    const r=await fetch(base()+'list?'+qs({page:state.page,page_size:50,sort:state.sort,dir:state.dir}),{cache:'no-store'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    state.pages=d.pages||1;
+
+    syncSelect($('library'),d.options?.libraries||[],'All libraries','id');
+    syncSelect($('srcCodec'),d.options?.codecs||[],'All input codecs');
+    syncSelect($('dstCodec'),d.options?.codecs||[],'All output codecs');
+    syncSelect($('worker'),d.options?.workers||[],'All workers');
+
+    const s=d.summary||{};
+    $('mCount').textContent=Number(s.count||0).toLocaleString();
+    $('mStatus').textContent=`${s.success||0} success · ${s.failed||0} failed`;
+    $('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);
+    $('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);
+    $('count').textContent=`${d.total||0} matching records`;
+    $('page').textContent=`Page ${d.page||1} of ${d.pages||1}`;
+    $('prev').disabled=state.page<=1;$('next').disabled=state.page>=state.pages;
+
+    $('rows').innerHTML=(d.items||[]).map(x=>`<tr data-id="${x.id}" title="Click to view full details">
+      <td>${esc(date(x.finish_time))}</td>
+      <td><div class="filecell"><span class="filetext">${esc(x.file_name)}${x.imported?' <span class="muted">(legacy)</span>':''}</span><span class="openhint" aria-hidden="true">›</span></div></td>
+      <td>${esc(x.library_name||'—')}</td>
+      <td class="${x.success?'good':'bad'}">${x.success?'Success':'Failed'}</td>
+      <td>${esc(x.source_codec||'—')}</td><td>${esc(x.dest_codec||'—')}</td>
+      <td>${sizeVisual(x)}</td>
+      <td class="num ${savedClass(x.bytes_saved)}">${esc(humanBytes(x.bytes_saved))}</td>
+      <td class="num ${savedClass(x.bytes_saved)}">${esc(pct(x.percent_saved))}</td>
+      <td>${esc(humanTime(x.duration))}</td><td>${esc(x.worker||'—')}</td>
+    </tr>`).join('')||'<tr><td colspan="11">No records match these filters.</td></tr>';
+
+    document.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=()=>details(tr.dataset.id))
+  }catch(err){notice('Unable to load metrics: '+err.message)}
+}
+
+async function details(id){
+  const r=await fetch(base()+'details?'+new URLSearchParams({id}),{cache:'no-store'});
+  const x=(await r.json()).item;if(!x)return;
+  const fields=[
+    ['Finished',date(x.finish_time)],['Status',x.success?'Success':'Failed'],['Library',x.library_name||'—'],['Worker',x.worker||'—'],
+    ['Input codec',x.source_codec||'—'],['Output codec',x.dest_codec||'—'],['Input profile',x.source_profile||'—'],['Output profile',x.dest_profile||'—'],
+    ['Input resolution',x.source_width?`${x.source_width}×${x.source_height}`:'—'],['Output resolution',x.dest_width?`${x.dest_width}×${x.dest_height}`:'—'],
+    ['Input pixel format',x.source_pix_fmt||'—'],['Output pixel format',x.dest_pix_fmt||'—'],['Input audio',x.source_audio||'—'],['Output audio',x.dest_audio||'—'],
+    ['Before',humanBytes(x.source_size)],['After',humanBytes(x.dest_size)],['Saved',humanBytes(x.bytes_saved)],['Saved %',pct(x.percent_saved)],
+    ['Duration',humanTime(x.duration)],['Source path',x.source_path||'—'],['Destination path',x.dest_path||'—']
+  ];
+  $('detailTitle').textContent=x.file_name||'Task details';
+  $('detailGrid').innerHTML=fields.map(f=>`<div><span>${esc(f[0])}</span><strong>${esc(f[1])}</strong></div>`).join('');
+  $('details').showModal()
+}
+
+function colElement(name){return document.querySelector(`col[data-col="${name}"]`)}
+function tableWidthFromCols(){
+  const widths=[...document.querySelectorAll('#metricsTable col')].map(c=>parseFloat(c.style.width)||0);
+  $('metricsTable').style.width=Math.max(widths.reduce((a,b)=>a+b,0),700)+'px'
+}
+function loadColumnWidths(){
+  let saved={};try{saved=JSON.parse(localStorage.getItem('fileSizeMetricsPlus.columnWidths')||'{}')}catch(e){}
+  for(const [name,def] of Object.entries(DEFAULT_WIDTHS)){
+    const w=Math.max(55,Math.min(800,Number(saved[name])||def));
+    const col=colElement(name);if(col)col.style.width=w+'px'
+  }
+  tableWidthFromCols()
+}
+function saveColumnWidths(){
+  const out={};for(const name of Object.keys(DEFAULT_WIDTHS)){const col=colElement(name);if(col)out[name]=parseFloat(col.style.width)||DEFAULT_WIDTHS[name]}
+  localStorage.setItem('fileSizeMetricsPlus.columnWidths',JSON.stringify(out))
+}
+function setupResizers(){
+  document.querySelectorAll('.resize-handle').forEach(handle=>{
+    const th=handle.closest('th'),name=th.dataset.col;
+    handle.addEventListener('click',e=>e.stopPropagation());
+    handle.addEventListener('dblclick',e=>{
+      e.preventDefault();e.stopPropagation();const col=colElement(name);if(col)col.style.width=DEFAULT_WIDTHS[name]+'px';saveColumnWidths();tableWidthFromCols()
+    });
+    handle.addEventListener('mousedown',e=>{
+      e.preventDefault();e.stopPropagation();
+      const col=colElement(name),startX=e.clientX,startW=parseFloat(col.style.width)||th.getBoundingClientRect().width;
+      document.body.style.cursor='col-resize';document.body.style.userSelect='none';
+      const move=ev=>{col.style.width=Math.max(55,startW+(ev.clientX-startX))+'px';tableWidthFromCols()};
+      const up=()=>{document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect='';saveColumnWidths()};
+      document.addEventListener('mousemove',move);document.addEventListener('mouseup',up)
+    })
+  })
+}
+
+$('apply').onclick=()=>{state.page=1;load()};
+$('refresh').onclick=load;
+$('reset').onclick=()=>{
+  for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';
+  $('status').value='all';$('change').value='all';state.page=1;load()
+};
+$('prev').onclick=()=>{if(state.page>1){state.page--;load()}};
+$('next').onclick=()=>{if(state.page<state.pages){state.page++;load()}};
+$('close').onclick=()=>$('details').close();
+$('resetCols').onclick=()=>{
+  localStorage.removeItem('fileSizeMetricsPlus.columnWidths');
+  for(const [name,w] of Object.entries(DEFAULT_WIDTHS)){const col=colElement(name);if(col)col.style.width=w+'px'}
+  tableWidthFromCols()
+};
+document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>{
+  const n=th.dataset.sort;if(state.sort===n)state.dir=state.dir==='asc'?'desc':'asc';else{state.sort=n;state.dir='desc'}
+  state.page=1;load()
+});
+$('import').onclick=async()=>{
+  if(!confirm('Import existing history from the official File Size Metrics plugin? Existing imported rows will be skipped.'))return;
+  const r=await fetch(base()+'importLegacy',{cache:'no-store'});const d=await r.json();notice(d.message||'Import complete');load()
+};
+$('export').onclick=async()=>{
+  const r=await fetch(base()+'export?'+qs(),{cache:'no-store'});const b=await r.blob();
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='unmanic-file-size-metrics.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
+};
+
+loadColumnWidths();setupResizers();load();
+</script>
+</body></html>
