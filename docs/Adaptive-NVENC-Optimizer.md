@@ -36,9 +36,9 @@ encode only if worthwhile
 
 The full encode remains GPU-first.
 
-## Current phase: Learning + calibration preparation
+## Current phase: Manual calibration testing
 
-Current releases are deliberately read-only. The reference system has crossed the initial 10-record baseline threshold, so the optimizer now also builds sample-test plans without executing them.
+The reference system has crossed the initial baseline threshold. The optimizer can now execute an **opt-in manual sample test** when the original source is still safely available. Full media files and normal Unmanic encoding settings are still not changed by this phase.
 
 The optimizer reads successful NVENC records from File Size Metrics Plus and calculates telemetry completeness, storage reduction, observed QP, encode speed, output audio share, video bitrate change and candidate priority.
 
@@ -99,7 +99,7 @@ Clicking an Encode Advisor row now builds a read-only plan containing:
 - an estimated NVENC test duration based on measured encode speed;
 - the planned objective quality metrics (XPSNR + SSIM).
 
-Historical rows often point to files that Unmanic has already replaced with their HEVC outputs. Those rows are useful for learning compression behavior but are **not safe sources for perceptual calibration**, because the original reference frames no longer exist. Testing confirmed both states in practice: some no-op/failed video jobs still leave the original H.264 source available, while successful H.264→HEVC jobs generally leave only the HEVC replacement. This source-availability check is why sample execution is not enabled yet.
+Historical rows often point to files that Unmanic has already replaced with their HEVC outputs. Those rows are useful for learning compression behavior but are **not safe sources for perceptual calibration**, because the original reference frames no longer exist. Manual sample execution is therefore enabled only when the current file still matches the recorded original source closely enough in codec and size.
 
 ## Adjustable advisor columns
 
@@ -112,3 +112,20 @@ Learning mode does not re-encode files, change QP, change the video-transcoder p
 ## No-op video tasks
 
 A successful Unmanic task is not automatically a successful video transcode. Rows that finish with the source codec unchanged (for example H.264 → H.264 with zero or tiny size change) are now labeled **No video encode** and excluded from the adaptive training baseline. They may still be useful as calibration sources when the original file remains present.
+
+## Manual sample tests
+
+When **Run sample test** is pressed on a safe source, the optimizer runs the displayed QP ladder across the representative sample positions using HEVC/NVENC. The real episode/movie is never replaced.
+
+Each encoded sample is compared back to the original source segment with XPSNR and SSIM. The optimizer stores the resulting per-QP summaries in its own `adaptive_optimizer.db` for later calibration/model training.
+
+The plugin settings now include:
+
+- Keep calibration/test sample files (default OFF)
+- Representative samples per file (default 4)
+- TV/short-form sample duration (default 30 seconds)
+- Movie/long-form sample duration (default 45 seconds)
+
+With sample retention disabled, temporary clips are removed after their objective scores are saved. With retention enabled, the clips and a `result.json` remain in the plugin userdata sample directory for manual inspection.
+
+Only one sample-test job is allowed at a time. For the cleanest timing measurements, avoid deliberately starting one while the normal Unmanic video worker is already saturating the same GPU.
