@@ -18,9 +18,9 @@ Improve explanations of completed encodes: good compression, audio-limited, alre
 
 ## Phase 3 — Automated sample extraction
 
-Status: **planning groundwork started; execution not enabled**
+Status: **manual execution enabled for safely available originals**
 
-The optimizer now calculates four representative sample positions and a QP ladder for an advisor row. Actual FFmpeg sample extraction/encoding is deliberately still disabled until the original-source lifecycle is handled safely.
+The optimizer calculates representative sample positions and a bounded QP ladder. When the recorded original still exists, a manual test can now execute those short HEVC/NVENC variants without replacing the real media file. XPSNR and SSIM results are persisted for later calibration.
 
 Select multiple short clips rather than encoding the whole file repeatedly. The sampler should eventually prefer varied scenes such as low motion, high motion, dark content, detailed scenes and grain/noise when detected.
 
