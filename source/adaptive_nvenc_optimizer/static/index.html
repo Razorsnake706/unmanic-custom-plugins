@@ -912,52 +912,84 @@ async function openCalibrationReview(runId){
   renderReviewRun(run)
 }
 
-async function saveCalibrationRating(runId,label,rating){
+async function saveSampleCalibrationRating(runId,sampleIndex,label,rating){
   try{
-    const params=new URLSearchParams({run_id:runId,label:label,rating:rating,_:String(Date.now())});
-    const r=await fetch(base()+'rateCalibration?'+params.toString(),{cache:'no-store'});
+    const params=new URLSearchParams({
+      run_id:runId,
+      sample_index:String(sampleIndex),
+      label:label,
+      rating:rating,
+      _:String(Date.now())
+    });
+    const r=await fetch(base()+'rateSampleCalibration?'+params.toString(),{cache:'no-store'});
     const d=await r.json();
-    if(!d.success)throw new Error(d.message||'Unable to save calibration rating');
+    if(!d.success)throw new Error(d.message||'Unable to save sample rating');
     const index=calibrationRuns.findIndex(function(item){return String(item.id)===String(runId)});
     if(index>=0&&d.run)calibrationRuns[index]=d.run;
-    if(d.run)renderReviewRun(d.run);
-    await loadCalibrationRuns(false);
-    const refreshed=findReviewRun(runId);
-    if(refreshed)renderReviewRun(refreshed)
+    if(d.run)renderReviewRun(d.run)
   }catch(e){
-    notice('Unable to save rating: '+e.message)
+    notice('Unable to save sample rating: '+e.message)
   }
 }
 
-async function rateAllCalibration(runId,rating){
+async function rateSampleAllCalibration(runId,sampleIndex,rating){
   const label=ratingLabel(rating);
-  if(!confirm('Mark every blind candidate as '+label+'?\n\nUse this only when you genuinely cannot see a meaningful difference between any candidate and the reference.'))return;
-  const btn=$('allIndistinguishable');
-  const oldText=btn.textContent;
-  btn.disabled=true;
-  btn.textContent='Saving review…';
-  $('reviewFinishState').style.display='block';
-  $('reviewFinishState').textContent='Saving the review and starting objective scoring…';
+  if(!confirm('Mark every candidate in Sample '+sampleIndex+' as '+label+'?\n\nThis only affects this one sample. You can still change individual ratings before submitting the full review.'))return;
   try{
-    const params=new URLSearchParams({run_id:runId,rating:rating,_:String(Date.now())});
-    const r=await fetch(base()+'rateAllCalibration?'+params.toString(),{cache:'no-store'});
+    const params=new URLSearchParams({
+      run_id:runId,
+      sample_index:String(sampleIndex),
+      rating:rating,
+      _:String(Date.now())
+    });
+    const r=await fetch(base()+'rateSampleAllCalibration?'+params.toString(),{cache:'no-store'});
     const d=await r.json();
-    if(!d.success)throw new Error(d.message||'Unable to save bulk calibration rating');
+    if(!d.success)throw new Error(d.message||'Unable to save sample ratings');
+    const index=calibrationRuns.findIndex(function(item){return String(item.id)===String(runId)});
+    if(index>=0&&d.run)calibrationRuns[index]=d.run;
+    if(d.run)renderReviewRun(d.run)
+  }catch(e){
+    notice('Unable to save sample ratings: '+e.message)
+  }
+}
+
+async function submitCalibrationReview(){
+  if(!currentReviewRun)return;
+  if(!currentReviewRun.draft_complete){
+    notice('Rate every candidate in every sample before submitting.');
+    return
+  }
+  if(!confirm(
+    'Submit this calibration review?\n\n'+
+    'Your per-sample ratings will be locked. Adaptive will derive a conservative overall rating for each candidate using the worst reviewable sample, then start targeted objective scoring.'
+  ))return;
+
+  const runId=currentReviewRun.id;
+  const btn=$('submitReview');
+  btn.disabled=true;
+  btn.textContent='Submitting…';
+  $('reviewDraftHint').textContent='Submitting ratings and starting objective scoring…';
+
+  try{
+    const params=new URLSearchParams({run_id:runId,_:String(Date.now())});
+    const r=await fetch(base()+'submitCalibrationReview?'+params.toString(),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to submit calibration review');
     const index=calibrationRuns.findIndex(function(item){return String(item.id)===String(runId)});
     if(index>=0&&d.run)calibrationRuns[index]=d.run;
     if(d.run)renderReviewRun(d.run);
     await loadCalibrationRuns(false);
     const refreshed=findReviewRun(runId);
     if(refreshed)renderReviewRun(refreshed);
-    notice('All candidates marked '+label+'. Adaptive will objectively probe the highest tested QP because no visible boundary was found.')
+    notice('Calibration ratings submitted. Objective boundary scoring has started.')
   }catch(e){
     btn.disabled=false;
-    btn.textContent=oldText;
-    $('reviewFinishState').style.display='block';
-    $('reviewFinishState').textContent='Unable to save the review: '+e.message;
-    notice('Unable to save bulk rating: '+e.message)
+    btn.textContent='Submit ratings';
+    $('reviewDraftHint').textContent='Submission failed: '+e.message;
+    notice('Unable to submit calibration review: '+e.message)
   }
 }
+
 
 async function discardCurrentCalibrationRun(){
   if(!currentReviewRun)return;
@@ -1098,10 +1130,7 @@ $('downloadReviewBundle').onclick=function(){
   const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
   buildAndDownloadCalibrationBundle(currentReviewRun.id,safe+' - blind calibration clips.zip')
 };
-$('allIndistinguishable').onclick=function(){
-  if(!currentReviewRun)return;
-  rateAllCalibration(currentReviewRun.id,'indistinguishable')
-};
+$('submitReview').onclick=submitCalibrationReview;
 $('discardCalibrationRun').onclick=discardCurrentCalibrationRun;
 $('deleteReviewFiles').onclick=deleteCurrentReviewFiles;
 loadColumnWidths();
