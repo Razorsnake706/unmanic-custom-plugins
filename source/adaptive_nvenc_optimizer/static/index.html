@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.7.2</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.8.0</div></div>
   <div class="actions"><button id="openCalibrationHub" class="btn">Calibration Review <span id="topReviewCount" class="review-pill">0</span></button><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -217,7 +217,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.7.2';
+const PLUGIN_VERSION='0.8.0';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -633,7 +633,7 @@ function calibrationRangeText(summary){
 
 function qualityStatusText(run){
   const status=run.quality_status||'not_started';
-  if(!run.completed)return'Objective scoring waits until all blind candidate ratings are complete.';
+  if(!run.completed)return'Objective scoring is waiting for you to finish the per-sample ratings and press Submit ratings.';
   if(status==='queued')return'Targeted XPSNR + SSIM scoring is queued for the reviewed quality boundary.';
   if(status==='running'){
     const total=Number(run.quality_total||0),done=Number(run.quality_completed||0);
@@ -683,11 +683,16 @@ async function loadCalibrationRuns(showNotice){
       $('reviewRuns').innerHTML='<span class="muted">No retained calibration runs yet. Turn on Keep calibration/test sample files before a sample test to create one.</span>';
     }else{
       $('reviewRuns').innerHTML=calibrationRuns.map(function(run){
-        const rated=Object.values(run.ratings||{}).filter(Boolean).length;
+        const rated=run.legacy_review
+          ? Object.values(run.ratings||{}).filter(Boolean).length
+          : Number(run.sample_rating_count||0);
+        const required=run.legacy_review
+          ? Number(run.candidate_count||0)
+          : Number(run.sample_rating_required||0);
         const safe=(run.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
         return '<div class="review-run" style="cursor:default">'+
           '<strong>'+(run.completed?'✓ ':'')+esc(run.file_name||run.id)+'</strong>'+
-          '<div class="sub">'+rated+' / '+esc(run.candidate_count)+' candidates rated · '+esc(run.sample_count)+' reference clips · '+(run.bundle&&run.bundle.status==='ready'?'ZIP ready':(run.bundle&&['queued','building'].includes(run.bundle.status)?'ZIP building '+esc(run.bundle.completed||0)+' / '+esc(run.bundle.total||0):'ZIP pending'))+'</div>'+
+          '<div class="sub">'+rated+' / '+required+' '+(run.legacy_review?'candidate':'sample')+' ratings · '+esc(run.sample_count)+' reference clips · '+(run.review_submitted||run.legacy_review?'Submitted · ':'Draft · ')+(run.bundle&&run.bundle.status==='ready'?'ZIP ready':(run.bundle&&['queued','building'].includes(run.bundle.status)?'ZIP building '+esc(run.bundle.completed||0)+' / '+esc(run.bundle.total||0):'ZIP pending'))+'</div>'+
           '<div class="sample-actions" style="margin-top:7px">'+
             '<button class="btn primary" data-open-review="'+esc(run.id)+'">Open review</button>'+
             '<button class="btn" data-download-bundle="'+esc(run.id)+'" data-filename="'+esc(safe+' - blind calibration clips.zip')+'">'+(run.bundle&&run.bundle.status==='ready'?'Download ZIP':'Open ZIP progress')+'</button>'+
