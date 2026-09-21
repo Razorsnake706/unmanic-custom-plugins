@@ -547,13 +547,13 @@ function renderReviewRun(run){
     const reference=calibrationFileUrl(run.id,'reference',sample.sample_index,'');
     const candidates=(sample.candidates||[]).map(function(item){
       const href=calibrationFileUrl(run.id,'candidate',sample.sample_index,item.label);
-      return '<a class="download-link" href="'+href+'" download="Sample '+esc(sample.sample_index)+' - Candidate '+esc(item.label)+'.mkv">Candidate '+esc(item.label)+'</a>'
+      return '<a class="download-link" href="'+href+'" download="Sample '+esc(sample.sample_index)+' - Candidate '+esc(item.label)+'.mkv">Download Candidate '+esc(item.label)+'</a>'
     }).join('');
     return '<div class="review-sample">'+
       '<strong>Sample '+esc(sample.sample_index)+'</strong>'+
       '<div class="sub">'+timecode(sample.start)+' · '+humanTime(sample.length)+'</div>'+
       '<div class="download-grid">'+
-        '<a class="download-link" href="'+reference+'" download="Sample '+esc(sample.sample_index)+' - Reference.mkv">Reference</a>'+
+        '<a class="download-link" href="'+reference+'" download="Sample '+esc(sample.sample_index)+' - Reference.mkv">Download Reference</a>'+
         candidates+
       '</div>'+
     '</div>'
