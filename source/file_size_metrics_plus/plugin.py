@@ -317,6 +317,196 @@ def _rowdict(row):
     return dict(row) if row else None
 
 
+def _norm_path(value):
+    if not value:
+        return None
+    try:
+        return os.path.normcase(os.path.normpath(str(value))).replace("\\", "/").rstrip("/")
+    except Exception:
+        return str(value).replace("\\", "/").rstrip("/").lower()
+
+
+def _row_tokens(row):
+    """Return stable identity tokens for linking multiple processing passes."""
+    tokens = set()
+    source = _norm_path(row["source_path"] if isinstance(row, sqlite3.Row) else row.get("source_path"))
+    dest = _norm_path(row["dest_path"] if isinstance(row, sqlite3.Row) else row.get("dest_path"))
+    if source:
+        tokens.add("path:" + source)
+    if dest:
+        tokens.add("path:" + dest)
+    if not tokens:
+        library_id = row["library_id"] if isinstance(row, sqlite3.Row) else row.get("library_id")
+        file_name = row["file_name"] if isinstance(row, sqlite3.Row) else row.get("file_name")
+        tokens.add("name:{}:{}".format(library_id or "", str(file_name or "").lower()))
+    return tokens
+
+
+def _classify_pass(row):
+    data = dict(row) if isinstance(row, sqlite3.Row) else row
+    video_changed = any([
+        data.get("source_codec") and data.get("dest_codec") and data.get("source_codec") != data.get("dest_codec"),
+        data.get("source_profile") and data.get("dest_profile") and data.get("source_profile") != data.get("dest_profile"),
+        data.get("source_pix_fmt") and data.get("dest_pix_fmt") and data.get("source_pix_fmt") != data.get("dest_pix_fmt"),
+        data.get("source_width") and data.get("dest_width") and data.get("source_width") != data.get("dest_width"),
+        data.get("source_height") and data.get("dest_height") and data.get("source_height") != data.get("dest_height"),
+    ])
+    audio_changed = bool(
+        data.get("source_audio") and data.get("dest_audio")
+        and data.get("source_audio") != data.get("dest_audio")
+    )
+    if video_changed and audio_changed:
+        return "Video + Audio"
+    if video_changed:
+        return "Video"
+    if audio_changed:
+        return "Audio"
+    if data.get("imported"):
+        return "Legacy"
+    return "Other"
+
+
+def _group_rows(rows):
+    """Group task rows when their source/destination paths form the same media chain."""
+    rows = [dict(r) if isinstance(r, sqlite3.Row) else dict(r) for r in rows]
+    if not rows:
+        return []
+
+    parent = list(range(len(rows)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    token_owner = {}
+    for i, row in enumerate(rows):
+        for token in _row_tokens(row):
+            if token in token_owner:
+                union(i, token_owner[token])
+            else:
+                token_owner[token] = i
+
+    buckets = {}
+    for i, row in enumerate(rows):
+        buckets.setdefault(find(i), []).append(row)
+
+    groups = []
+    for members in buckets.values():
+        members.sort(key=lambda r: (r.get("finish_time") or 0, r.get("id") or 0))
+        first, last = members[0], members[-1]
+
+        source_size = next((m.get("source_size") for m in members if m.get("source_size") is not None), None)
+        dest_size = next((m.get("dest_size") for m in reversed(members) if m.get("dest_size") is not None), None)
+        saved = source_size - dest_size if source_size is not None and dest_size is not None else None
+        pct = (saved / source_size * 100.0) if saved is not None and source_size else None
+
+        source_codec = next((m.get("source_codec") for m in members if m.get("source_codec")), None)
+        dest_codec = next((m.get("dest_codec") for m in reversed(members) if m.get("dest_codec")), None)
+        source_audio = next((m.get("source_audio") for m in members if m.get("source_audio")), None)
+        dest_audio = next((m.get("dest_audio") for m in reversed(members) if m.get("dest_audio")), None)
+
+        libraries = []
+        workers = []
+        pass_types = []
+        for m in members:
+            if m.get("library_name") and m.get("library_name") not in libraries:
+                libraries.append(m.get("library_name"))
+            if m.get("worker") and m.get("worker") not in workers:
+                workers.append(m.get("worker"))
+            ptype = _classify_pass(m)
+            if ptype not in pass_types:
+                pass_types.append(ptype)
+
+        combined = dict(last)
+        combined.update({
+            "id": last.get("id"),
+            "grouped": 1,
+            "pass_count": len(members),
+            "pass_types": pass_types,
+            "file_name": last.get("file_name") or first.get("file_name"),
+            "success": 1 if all(bool(m.get("success")) for m in members) else 0,
+            "start_time": next((m.get("start_time") for m in members if m.get("start_time") is not None), first.get("start_time")),
+            "finish_time": last.get("finish_time"),
+            "duration": sum(float(m.get("duration") or 0) for m in members),
+            "library_name": libraries[0] if len(libraries) == 1 else ("{} libraries".format(len(libraries)) if libraries else None),
+            "worker": workers[0] if len(workers) == 1 else ("{} workers".format(len(workers)) if workers else None),
+            "source_path": first.get("source_path") or first.get("dest_path"),
+            "dest_path": last.get("dest_path") or last.get("source_path"),
+            "source_size": source_size,
+            "dest_size": dest_size,
+            "bytes_saved": saved,
+            "percent_saved": pct,
+            "source_codec": source_codec,
+            "dest_codec": dest_codec,
+            "source_audio": source_audio,
+            "dest_audio": dest_audio,
+            "imported": 1 if all(bool(m.get("imported")) for m in members) else 0,
+            "group_ids": [m.get("id") for m in members],
+        })
+        groups.append(combined)
+    return groups
+
+
+def _sort_items(items, sort, direction):
+    reverse = direction == "DESC"
+
+    def key(row):
+        value = row.get(sort)
+        if value is None:
+            return (1, "")
+        if isinstance(value, str):
+            return (0, value.lower())
+        return (0, value)
+
+    return sorted(items, key=key, reverse=reverse)
+
+
+def _summary_for_items(items):
+    source = sum(int(x.get("source_size") or 0) for x in items)
+    dest = sum(int(x.get("dest_size") or 0) for x in items)
+    return {
+        "count": len(items),
+        "success": sum(1 for x in items if x.get("success")),
+        "failed": sum(1 for x in items if not x.get("success")),
+        "source": source,
+        "dest": dest,
+        "saved": sum(int(x.get("bytes_saved") or 0) for x in items),
+        "percent": ((source - dest) / source * 100.0) if source else None,
+        "duration": sum(float(x.get("duration") or 0) for x in items),
+    }
+
+
+def _related_history(conn, row):
+    if not row:
+        return []
+    all_rows = [dict(r) for r in conn.execute("SELECT * FROM metrics ORDER BY finish_time ASC, id ASC").fetchall()]
+    target_tokens = set(_row_tokens(dict(row)))
+    related = []
+    changed = True
+    while changed:
+        changed = False
+        for item in all_rows:
+            if item in related:
+                continue
+            tokens = _row_tokens(item)
+            if tokens & target_tokens:
+                related.append(item)
+                before = len(target_tokens)
+                target_tokens.update(tokens)
+                changed = changed or len(target_tokens) != before
+    related.sort(key=lambda r: (r.get("finish_time") or 0, r.get("id") or 0))
+    for item in related:
+        item["pass_type"] = _classify_pass(item)
+    return related
+
+
 def _available_options(conn):
     """Return filter values independently of the current table filters.
 
@@ -372,30 +562,30 @@ def _list_data(arguments):
     direction = "ASC" if str(_arg(arguments, "dir", "desc")).lower() == "asc" else "DESC"
     page = max(1, _num(_arg(arguments, "page", 1)) or 1)
     size = min(250, max(10, _num(_arg(arguments, "page_size", 50)) or 50))
+    combine = str(_arg(arguments, "combine", "0")).lower() in ("1", "true", "yes", "on")
+
     with _db() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM metrics" + where, params).fetchone()[0]
-        rows = conn.execute(
-            f"SELECT * FROM metrics{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?",
-            params + [size, (page - 1) * size],
-        ).fetchall()
-        summary = conn.execute(
-            "SELECT COUNT(*) c, SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) ok, "
-            "SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) fail, SUM(source_size) src, SUM(dest_size) dst, "
-            "SUM(bytes_saved) saved, SUM(duration) dur FROM metrics" + where,
-            params,
-        ).fetchone()
+        filtered_rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM metrics" + where, params
+        ).fetchall()]
         options = _available_options(conn)
-    src = summary["src"] or 0
-    dst = summary["dst"] or 0
+
+    items = _group_rows(filtered_rows) if combine else filtered_rows
+    items = _sort_items(items, sort, direction)
+    total = len(items)
+    start_index = (page - 1) * size
+    page_items = items[start_index:start_index + size]
+    summary = _summary_for_items(items)
+
     return {
-        "items": [dict(r) for r in rows], "total": total, "page": page,
-        "pages": max(1, (total + size - 1) // size), "page_size": size,
-        "summary": {
-            "count": summary["c"] or 0, "success": summary["ok"] or 0, "failed": summary["fail"] or 0,
-            "source": src, "dest": dst, "saved": summary["saved"] or 0,
-            "percent": ((src - dst) / src * 100.0) if src else None, "duration": summary["dur"] or 0,
-        },
+        "items": page_items,
+        "total": total,
+        "page": page,
+        "pages": max(1, (total + size - 1) // size),
+        "page_size": size,
+        "summary": summary,
         "options": options,
+        "combined": combine,
     }
 
 
@@ -486,8 +676,14 @@ def render_frontend_panel(data):
             row = conn.execute(
                 "SELECT * FROM metrics WHERE id=?", (_num(_arg(args, "id", 0)) or 0,)
             ).fetchone()
+            history = _related_history(conn, row) if row else []
+        combined = _group_rows(history)[0] if history else _rowdict(row)
         data["content_type"] = "application/json"
-        data["content"] = json.dumps({"item": _rowdict(row)}, default=str)
+        data["content"] = json.dumps({
+            "item": _rowdict(row),
+            "combined": combined,
+            "history": history,
+        }, default=str)
         return data
     if path == "export":
         data["content_type"] = "text/csv; charset=utf-8"
