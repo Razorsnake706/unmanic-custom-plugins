@@ -73,8 +73,8 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.4</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
-  <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.5</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="checkUpdates" class="btn">Check plugin updates</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
 
@@ -436,10 +436,23 @@ function setupColumnPicker(){
     const picker=$('columnPicker');if(picker.open&&!picker.contains(e.target))picker.removeAttribute('open')
   })
 }
-async function refreshPluginRepos(){
+async function refreshPluginRepos(showNotice){
   try{
-    await fetch('/api/v1/plugins/repos/fetch?_='+Date.now(),{cache:'no-store',credentials:'same-origin'})
-  }catch(e){}
+    const direct=await fetch(base()+'refreshRepo?_='+Date.now(),{cache:'no-store'});
+    const result=await direct.json();
+    if(showNotice){
+      if(result.success){
+        const versions=(result.updated||[]).map(function(x){return x.version}).filter(Boolean);
+        notice('Plugin repository refreshed directly from GitHub'+(versions.length?' · latest '+versions.join(', '):'')+'. Open Plugins → Add New to install any available update.');
+      }else{
+        notice(result.message||'Unable to refresh plugin repository.');
+      }
+    }
+    return result
+  }catch(e){
+    if(showNotice)notice('Unable to refresh plugin repository: '+e.message);
+    return {success:false,message:e.message}
+  }
 }
 
 function setupResizers(){
@@ -512,6 +525,7 @@ $('deleteSelected').onclick=async function(){
 });
 
 $('refresh').onclick=load;
+$('checkUpdates').onclick=function(){refreshPluginRepos(true)};
 $('reset').onclick=()=>{
   for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';
   $('status').value='all';$('change').value='all';state.page=1;scheduleFilterReload(0)
@@ -542,6 +556,6 @@ $('export').onclick=async()=>{
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='unmanic-file-size-metrics.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
 };
 
-loadColumnWidths();setupColumnPicker();applyColumnVisibility();setupResizers();refreshPluginRepos();load();
+loadColumnWidths();setupColumnPicker();applyColumnVisibility();setupResizers();refreshPluginRepos(false);load();
 </script>
 </body></html>
