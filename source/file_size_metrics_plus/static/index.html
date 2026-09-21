@@ -135,7 +135,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 
 <div class="tablewrap"><table id="metricsTable">
 <colgroup>
-<col data-col="finish_time" style="width:150px"><col data-col="file_name" style="width:300px"><col data-col="library_name" style="width:120px"><col data-col="status" style="width:80px"><col data-col="source_codec" style="width:70px"><col data-col="dest_codec" style="width:70px"><col data-col="size" style="width:200px"><col data-col="bytes_saved" style="width:95px"><col data-col="percent_saved" style="width:65px"><col data-col="duration" style="width:80px"><col data-col="worker" style="width:100px"><col data-col="source_folder" style="width:260px"><col data-col="dest_folder" style="width:260px">
+<col data-col="finish_time" style="width:150px"><col data-col="file_name" style="width:380px"><col data-col="library_name" style="width:120px"><col data-col="status" style="width:80px"><col data-col="source_codec" style="width:70px"><col data-col="dest_codec" style="width:70px"><col data-col="size" style="width:220px"><col data-col="bytes_saved" style="width:95px"><col data-col="percent_saved" style="width:65px"><col data-col="duration" style="width:80px"><col data-col="worker" style="width:110px"><col data-col="source_folder" style="width:260px"><col data-col="dest_folder" style="width:260px">
 </colgroup>
 <thead><tr>
 <th data-col="finish_time" data-sort="finish_time">Finished<span class="resize-handle"></span></th>
@@ -162,7 +162,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 
 <script>
 const $=id=>document.getElementById(id);
-const DEFAULT_WIDTHS={finish_time:150,file_name:300,library_name:120,status:80,source_codec:70,dest_codec:70,size:200,bytes_saved:95,percent_saved:65,duration:80,worker:100,source_folder:260,dest_folder:260};
+const DEFAULT_WIDTHS={finish_time:150,file_name:380,library_name:120,status:80,source_codec:70,dest_codec:70,size:220,bytes_saved:95,percent_saved:65,duration:80,worker:110,source_folder:260,dest_folder:260};
 const COLUMN_DEFS=[
   ['finish_time','Finished'],['file_name','File'],['library_name','Library'],['status','Status'],
   ['source_codec','Input codec'],['dest_codec','Output codec'],['size','Before → After'],
@@ -347,7 +347,9 @@ async function details(id){
 function colElement(name){return document.querySelector(`col[data-col="${name}"]`)}
 function tableWidthFromCols(){
   const widths=[...document.querySelectorAll('#metricsTable col')].filter(function(col){return col.dataset.hidden!=='true'}).map(function(col){return parseFloat(col.style.width)||0});
-  $('metricsTable').style.width=Math.max(widths.reduce(function(a,b){return a+b},0),520)+'px'
+  const sum=widths.reduce(function(a,b){return a+b},0);
+  const viewport=$('metricsTable').parentElement.clientWidth||0;
+  $('metricsTable').style.width=Math.max(sum,viewport,520)+'px'
 }
 function loadColumnWidths(){
   let saved={};try{saved=JSON.parse(localStorage.getItem('fileSizeMetricsPlus.columnWidths')||'{}')}catch(e){}
