@@ -33,6 +33,8 @@ _self_update_state = {"running": False, "requested_version": None, "error": None
 _sample_job_lock = threading.Lock()
 _sample_jobs = {}
 _sample_active_job = None
+_quality_job_lock = threading.Lock()
+_quality_jobs = {}
 
 
 class Settings(PluginSettings):
