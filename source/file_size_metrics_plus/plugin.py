@@ -658,6 +658,21 @@ def _import_legacy():
         return {"success": False, "message": f"Legacy import failed: {exc}"}
 
 
+def _matching_ids(arguments):
+    where, params = _where(arguments)
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT id FROM metrics" + where + " ORDER BY finish_time DESC, id DESC",
+            params,
+        ).fetchall()
+    ids = [int(row["id"]) for row in rows]
+    return {
+        "success": True,
+        "count": len(ids),
+        "ids": ids,
+    }
+
+
 def _delete_entries(arguments):
     raw = str(_arg(arguments, "ids", "")).strip()
     ids = []
@@ -805,6 +820,10 @@ def render_frontend_panel(data):
             result = {"success": False, "message": str(exc)}
         data["content_type"] = "application/json"
         data["content"] = json.dumps(result, default=str)
+        return data
+    if path == "matchingIds":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_matching_ids(args))
         return data
     if path == "delete":
         data["content_type"] = "application/json"
