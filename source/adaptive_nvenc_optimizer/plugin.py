@@ -257,7 +257,10 @@ def _reference_capture_for_metrics_row(metrics_row):
                 """,
                 (task_id,),
             ).fetchone()
-        if row is None and source_path:
+        elif source_path:
+            # Legacy Metrics Plus rows may not have a task ID. Only those rows
+            # fall back to path matching so a new capture cannot accidentally be
+            # attached to an older processing pass for the same file path.
             row = conn.execute(
                 """
                 SELECT * FROM reference_captures
