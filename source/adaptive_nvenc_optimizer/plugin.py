@@ -1180,20 +1180,23 @@ def _metric_from_log(text, metric):
     return None
 
 
-def _run_quality_metric(source_path, candidate_path, start, length, metric):
-    filter_name = "xpsnr" if metric == "xpsnr" else "ssim"
+def _run_quality_metrics(source_path, candidate_path, start, length):
+    """Calculate XPSNR and SSIM in one FFmpeg decode/filter pass."""
     graph = (
-        "[0:v:0]setpts=PTS-STARTPTS[ref];"
-        "[1:v:0]setpts=PTS-STARTPTS[dist];"
-        "[ref][dist]{}".format(filter_name)
+        "[0:v:0]setpts=PTS-STARTPTS,split=2[refx][refs];"
+        "[1:v:0]setpts=PTS-STARTPTS,split=2[distx][dists];"
+        "[refx][distx]xpsnr[xout];"
+        "[refs][dists]ssim[sout]"
     )
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "info",
         "-ss", str(start), "-t", str(length), "-i", source_path,
         "-i", candidate_path,
         "-filter_complex", graph,
+        "-map", "[xout]", "-map", "[sout]",
         "-an", "-shortest", "-f", "null", "-",
     ]
+    started = time.time()
     proc = subprocess.run(
         cmd,
         capture_output=True,
@@ -1201,12 +1204,28 @@ def _run_quality_metric(source_path, candidate_path, start, length, metric):
         timeout=max(180, int(length * 12)),
         check=False,
     )
+    elapsed = time.time() - started
     combined = (proc.stderr or "") + "\n" + (proc.stdout or "")
-    value = _metric_from_log(combined, metric)
+    xpsnr = _metric_from_log(combined, "xpsnr")
+    ssim = _metric_from_log(combined, "ssim")
     return {
-        "success": proc.returncode == 0 and value is not None,
+        "success": proc.returncode == 0 and xpsnr is not None and ssim is not None,
+        "xpsnr": xpsnr,
+        "ssim": ssim,
+        "elapsed": elapsed,
+        "error": None if xpsnr is not None and ssim is not None else combined.strip()[-1800:],
+    }
+
+
+def _run_quality_metric(source_path, candidate_path, start, length, metric):
+    """Compatibility wrapper for older callers; prefer _run_quality_metrics()."""
+    result = _run_quality_metrics(source_path, candidate_path, start, length)
+    value = result.get(metric)
+    return {
+        "success": result.get("success") and value is not None,
         "value": value,
-        "error": None if value is not None else combined.strip()[-1600:],
+        "elapsed": result.get("elapsed"),
+        "error": result.get("error") if value is None else None,
     }
 
 
