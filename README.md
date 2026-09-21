@@ -1,1 +1,0 @@
-# unmanic-custom-plugins
