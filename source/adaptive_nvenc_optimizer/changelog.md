@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+- Reworked the in-panel updater so the plugin no longer replaces/reloads itself inside the same Tornado API request.
+- Self-updates are now scheduled in a short-delay background thread after the panel request has returned; the UI polls the installed version until the update is complete.
+- Added update-status endpoints and retained direct GitHub repository refresh before scheduling an update.
+- Added a **No video encode** diagnosis and excluded tasks that did not actually produce HEVC video from the adaptive training baseline.
+- This prevents successful/no-op H.264→H.264 tasks from being treated as valid NVENC compression training records.
+- Sample planning and resizable columns remain unchanged.
+
 ## 0.1.2
 
 - Added draggable, persistent advisor column widths with a **Reset column widths** control.
