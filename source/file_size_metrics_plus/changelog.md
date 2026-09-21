@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7
+
+- Added a **Quick select** menu for mass-selecting useful groups without changing the visible table filters first.
+- Quick select includes Legacy/imported, Failed, Successful, Smaller, Larger, and No-size-change entries.
+- Added dynamic quick-select groups for every configured Library, recorded Worker, Input codec, and Output codec.
+- Quick selections are additive to the existing selection.
+- Current filters remain active; when choosing a library/worker/codec/status/size group, that quick-select choice replaces only the matching filter dimension while preserving the other active filters.
+- **Select all matching** remains available as a one-click option.
+
 ## 0.1.6
 
 - Added **Select all matching** to select every record that matches the currently active filters, not just the 50 rows on the visible page.
