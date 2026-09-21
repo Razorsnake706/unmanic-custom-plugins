@@ -7,6 +7,8 @@ import os
 import sqlite3
 import statistics
 import subprocess
+import shutil
+import uuid
 import time
 import threading
 
@@ -26,10 +28,42 @@ logger = UnmanicLogging.get_logger(name="Unmanic.Plugin.adaptive_nvenc_optimizer
 _last_direct_repo_refresh = 0.0
 _self_update_lock = threading.Lock()
 _self_update_state = {"running": False, "requested_version": None, "error": None}
+_sample_job_lock = threading.Lock()
+_sample_jobs = {}
+_sample_active_job = None
 
 
 class Settings(PluginSettings):
-    settings = {}
+    settings = {
+        "keep_sample_files": False,
+        "sample_count": 4,
+        "tv_sample_seconds": 30,
+        "movie_sample_seconds": 45,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(Settings, self).__init__(*args, **kwargs)
+        self.form_settings = {
+            "keep_sample_files": {
+                "label": "Keep calibration/test sample files",
+                "description": "Off by default. Enable only when you want to manually inspect retained HEVC sample files after a test.",
+            },
+            "sample_count": {
+                "label": "Representative samples per file",
+                "description": "Number of positions distributed across the runtime. Recommended: 4.",
+                "input_type": "text",
+            },
+            "tv_sample_seconds": {
+                "label": "TV/short-form sample duration (seconds)",
+                "description": "Used for media shorter than one hour. Recommended: 30 seconds.",
+                "input_type": "text",
+            },
+            "movie_sample_seconds": {
+                "label": "Movie/long-form sample duration (seconds)",
+                "description": "Used for media one hour or longer. Recommended: 45 seconds.",
+                "input_type": "text",
+            },
+        }
 
 
 settings = Settings()
@@ -56,6 +90,44 @@ def _int(value):
         return int(value) if value is not None and str(value) != "" else None
     except Exception:
         return None
+
+
+def _optimizer_profile():
+    return settings.get_profile_directory()
+
+
+def _optimizer_db_path():
+    return os.path.join(_optimizer_profile(), "adaptive_optimizer.db")
+
+
+def _optimizer_db():
+    conn = sqlite3.connect(_optimizer_db_path(), timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sample_runs (
+            id TEXT PRIMARY KEY,
+            metric_id INTEGER,
+            file_name TEXT,
+            source_path TEXT,
+            started REAL,
+            finished REAL,
+            success INTEGER,
+            keep_files INTEGER,
+            error TEXT,
+            result_json TEXT
+        )
+        """
+    )
+    return conn
+
+
+def _sample_root():
+    path = os.path.join(_optimizer_profile(), "samples")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _metrics_db_path():
@@ -264,11 +336,22 @@ def _current_media_identity(path):
         return {"exists": True, "probe_error": str(exc)}
 
 
-def _sample_timestamps(duration, sample_length):
+def _sample_timestamps(duration, sample_length, sample_count=4):
     duration = _float(duration)
+    sample_count = max(1, min(8, _int(sample_count) or 4))
     if not duration or duration <= sample_length + 20:
         return []
-    positions = (0.10, 0.35, 0.60, 0.85)
+
+    # Spread samples through the interior of the runtime while avoiding intros,
+    # credits and seek-edge behavior. Four samples produce 10/35/60/85%-ish
+    # coverage similar to the original hand-picked plan.
+    if sample_count == 1:
+        positions = [0.50]
+    else:
+        low, high = 0.10, 0.85
+        step = (high - low) / float(sample_count - 1)
+        positions = [low + step * i for i in range(sample_count)]
+
     starts = []
     edge = min(60.0, max(10.0, duration * 0.03))
     latest = max(edge, duration - sample_length - edge)
@@ -331,8 +414,11 @@ def _sample_plan(arguments):
             )
 
         duration = _float(r.get("source_duration")) or _float(identity.get("duration")) or _float(r.get("dest_duration"))
-        sample_length = 45 if duration and duration >= 3600 else 30
-        starts = _sample_timestamps(duration, sample_length)
+        sample_count = max(1, min(8, _int(settings.get_setting("sample_count")) or 4))
+        short_length = max(10, min(120, _int(settings.get_setting("tv_sample_seconds")) or 30))
+        long_length = max(10, min(180, _int(settings.get_setting("movie_sample_seconds")) or 45))
+        sample_length = long_length if duration and duration >= 3600 else short_length
+        starts = _sample_timestamps(duration, sample_length, sample_count)
 
         current_qp = _int(r.get("encoder_quality"))
         if current_qp is None:
@@ -372,11 +458,460 @@ def _sample_plan(arguments):
                 "estimated_nvenc_seconds": estimated_encode_seconds,
                 "quality_metrics": ["xpsnr", "ssim"],
                 "can_execute_safely": original_available and bool(starts),
-                "mode": "planning_only",
+                "mode": "manual_test_available" if original_available and bool(starts) else "planning_only",
+                "keep_sample_files": bool(settings.get_setting("keep_sample_files")),
             },
         }
     finally:
         conn.close()
+
+
+
+def _job_update(job_id, **changes):
+    with _sample_job_lock:
+        job = _sample_jobs.get(job_id)
+        if job is not None:
+            job.update(changes)
+
+
+def _command_value(command_text, names, default=None):
+    if not command_text:
+        return default
+    try:
+        import shlex
+        tokens = shlex.split(command_text)
+    except Exception:
+        tokens = str(command_text).split()
+    for i, token in enumerate(tokens[:-1]):
+        for name in names:
+            if token == name or token.startswith(name + ":"):
+                return tokens[i + 1]
+    return default
+
+
+def _row_encoder_command(row):
+    try:
+        commands = json.loads(row.get("encoder_commands_json") or "[]")
+    except Exception:
+        commands = []
+    for command in commands:
+        if "nvenc" in str(command).lower():
+            return str(command)
+    return str(commands[0]) if commands else ""
+
+
+def _build_sample_encode_command(row, source_path, start, length, qp, output_path, use_hw_decode=True):
+    command_text = _row_encoder_command(row)
+    preset = row.get("encoder_preset") or _command_value(command_text, ["-preset"], "p4")
+    tune = row.get("encoder_tune") or _command_value(command_text, ["-tune"], "hq")
+    profile = row.get("encoder_profile") or _command_value(command_text, ["-profile:v", "-profile"], "main10")
+    rate_control = row.get("encoder_rate_control") or _command_value(command_text, ["-rc:v", "-rc"], "constqp")
+    lookahead = _int(row.get("encoder_lookahead"))
+    if lookahead is None:
+        lookahead = _int(_command_value(command_text, ["-rc-lookahead:v", "-rc-lookahead"], 20))
+    spatial_aq = _int(row.get("encoder_spatial_aq"))
+    if spatial_aq is None:
+        spatial_aq = _int(_command_value(command_text, ["-spatial-aq:v", "-spatial-aq"], 1))
+    aq_strength = _int(row.get("encoder_aq_strength"))
+    if aq_strength is None:
+        aq_strength = _int(_command_value(command_text, ["-aq-strength:v", "-aq-strength"], 8))
+    gpu = _int(_command_value(command_text, ["-gpu:v", "-gpu"], 0))
+    if gpu is None:
+        gpu = 0
+
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    if use_hw_decode and str(row.get("encoder_hwaccel") or "").lower() == "cuda":
+        cmd += ["-hwaccel", "cuda", "-hwaccel_device", str(gpu), "-hwaccel_output_format", "cuda"]
+
+    cmd += [
+        "-ss", str(start),
+        "-i", source_path,
+        "-t", str(length),
+        "-map", "0:v:0",
+        "-an", "-sn", "-dn",
+        "-c:v", "hevc_nvenc",
+        "-gpu", str(gpu),
+        "-preset", str(preset),
+        "-tune", str(tune),
+        "-profile:v", str(profile),
+        "-rc:v", str(rate_control),
+        "-qp:v", str(qp),
+    ]
+
+    if lookahead is not None:
+        cmd += ["-rc-lookahead:v", str(lookahead)]
+    if spatial_aq is not None:
+        cmd += ["-spatial-aq:v", "1" if spatial_aq else "0"]
+    if aq_strength is not None and spatial_aq:
+        cmd += ["-aq-strength:v", str(aq_strength)]
+
+    cmd += [output_path]
+    return cmd
+
+
+def _run_sample_encode(row, source_path, start, length, qp, output_path):
+    attempts = [True, False] if str(row.get("encoder_hwaccel") or "").lower() == "cuda" else [False]
+    last_error = None
+    used_hw_decode = False
+    for hw_decode in attempts:
+        cmd = _build_sample_encode_command(
+            row, source_path, start, length, qp, output_path, use_hw_decode=hw_decode
+        )
+        started = time.time()
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(120, int(length * 8)), check=False)
+        elapsed = time.time() - started
+        if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            used_hw_decode = hw_decode
+            return {
+                "success": True,
+                "elapsed": elapsed,
+                "used_hw_decode": used_hw_decode,
+                "command": cmd,
+            }
+        last_error = (proc.stderr or proc.stdout or "ffmpeg sample encode failed").strip()[-1800:]
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except OSError:
+            pass
+
+    return {"success": False, "error": last_error or "Sample encode failed."}
+
+
+def _metric_from_log(text, metric):
+    lines = [line.strip() for line in str(text or "").splitlines()]
+    if metric == "ssim":
+        for line in reversed(lines):
+            if "SSIM" in line and "All:" in line:
+                match = re.search(r"All:\s*([0-9.]+)", line)
+                if match:
+                    return _float(match.group(1))
+    elif metric == "xpsnr":
+        for line in reversed(lines):
+            if "XPSNR" not in line.upper():
+                continue
+            # Y/luma is the primary value for YCbCr sources. If an FFmpeg
+            # version formats it differently, fall back to the first number
+            # after the XPSNR label.
+            match = re.search(r"\b[yY]\s*:\s*([0-9.]+)", line)
+            if match:
+                return _float(match.group(1))
+            tail = re.split(r"XPSNR", line, flags=re.IGNORECASE)[-1]
+            match = re.search(r"([0-9]+(?:\.[0-9]+)?)", tail)
+            if match:
+                return _float(match.group(1))
+    return None
+
+
+def _run_quality_metric(source_path, candidate_path, start, length, metric):
+    filter_name = "xpsnr" if metric == "xpsnr" else "ssim"
+    graph = (
+        "[0:v:0]setpts=PTS-STARTPTS[ref];"
+        "[1:v:0]setpts=PTS-STARTPTS[dist];"
+        "[ref][dist]{}".format(filter_name)
+    )
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "info",
+        "-ss", str(start), "-t", str(length), "-i", source_path,
+        "-i", candidate_path,
+        "-filter_complex", graph,
+        "-an", "-shortest", "-f", "null", "-",
+    ]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=max(180, int(length * 12)),
+        check=False,
+    )
+    combined = (proc.stderr or "") + "\n" + (proc.stdout or "")
+    value = _metric_from_log(combined, metric)
+    return {
+        "success": proc.returncode == 0 and value is not None,
+        "value": value,
+        "error": None if value is not None else combined.strip()[-1600:],
+    }
+
+
+def _aggregate_qp_results(samples, sample_length):
+    grouped = {}
+    for sample in samples:
+        qp = str(sample.get("qp"))
+        grouped.setdefault(qp, []).append(sample)
+
+    output = []
+    for qp, rows in sorted(grouped.items(), key=lambda item: int(item[0])):
+        xpsnr = [r.get("xpsnr") for r in rows if r.get("xpsnr") is not None]
+        ssim = [r.get("ssim") for r in rows if r.get("ssim") is not None]
+        bitrates = [r.get("video_bitrate") for r in rows if r.get("video_bitrate") is not None]
+        output.append({
+            "qp": int(qp),
+            "samples": len(rows),
+            "xpsnr": _mean(xpsnr),
+            "ssim": _mean(ssim),
+            "video_bitrate": _mean(bitrates),
+            "encoded_bytes": sum(int(r.get("bytes") or 0) for r in rows),
+            "encode_seconds": sum(float(r.get("encode_seconds") or 0) for r in rows),
+            "quality_samples": min(len(xpsnr), len(ssim)),
+        })
+    return output
+
+
+def _persist_sample_run(job):
+    try:
+        with _optimizer_db() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO sample_runs(
+                    id, metric_id, file_name, source_path, started, finished,
+                    success, keep_files, error, result_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    job.get("id"),
+                    job.get("metric_id"),
+                    job.get("file_name"),
+                    job.get("source_path"),
+                    job.get("started"),
+                    job.get("finished"),
+                    1 if job.get("status") == "completed" else 0,
+                    1 if job.get("keep_files") else 0,
+                    job.get("error"),
+                    json.dumps(job.get("result") or {}, default=str),
+                ),
+            )
+    except Exception:
+        logger.exception("Unable to persist adaptive sample-test result")
+
+
+def _sample_test_worker(job_id, metric_id):
+    global _sample_active_job
+
+    job_dir = None
+    try:
+        plan_data = _sample_plan({"id": metric_id})
+        if not plan_data.get("success"):
+            raise RuntimeError(plan_data.get("message") or "Unable to build sample plan.")
+        plan = plan_data.get("plan") or {}
+        check = plan_data.get("source_check") or {}
+        if not plan.get("can_execute_safely") or not check.get("original_available"):
+            raise RuntimeError("The original source is not safely available for a perceptual sample test.")
+
+        conn = _metrics_db()
+        if conn is None:
+            raise RuntimeError("File Size Metrics Plus database was not found.")
+        try:
+            row_obj = conn.execute("SELECT * FROM metrics WHERE id=?", (metric_id,)).fetchone()
+            if row_obj is None:
+                raise RuntimeError("Metrics record was not found.")
+            row = dict(row_obj)
+        finally:
+            conn.close()
+
+        source_path = check.get("path")
+        keep_files = bool(settings.get_setting("keep_sample_files"))
+        starts = list(plan.get("sample_starts") or [])
+        qps = list(plan.get("qp_values") or [])
+        sample_length = _int(plan.get("sample_length")) or 30
+        total = len(starts) * len(qps)
+        if not total:
+            raise RuntimeError("The sample plan did not contain any test variants.")
+
+        job_dir = os.path.join(_sample_root(), job_id)
+        os.makedirs(job_dir, exist_ok=False)
+
+        _job_update(
+            job_id,
+            status="running",
+            stage="encoding_and_quality",
+            total=total,
+            completed=0,
+            keep_files=keep_files,
+            sample_directory=job_dir if keep_files else None,
+        )
+
+        samples = []
+        completed = 0
+        for sample_index, start in enumerate(starts, 1):
+            for qp in qps:
+                filename = "sample_{:02d}_qp{}.mkv".format(sample_index, qp)
+                output_path = os.path.join(job_dir, filename)
+                _job_update(
+                    job_id,
+                    current="Sample {} at QP {}".format(sample_index, qp),
+                    completed=completed,
+                )
+
+                encoded = _run_sample_encode(
+                    row, source_path, start, sample_length, qp, output_path
+                )
+                if not encoded.get("success"):
+                    raise RuntimeError(
+                        "QP {} sample encode failed: {}".format(qp, encoded.get("error") or "unknown error")
+                    )
+
+                file_bytes = os.path.getsize(output_path)
+                video_bitrate = (file_bytes * 8.0) / float(sample_length)
+
+                xpsnr = _run_quality_metric(
+                    source_path, output_path, start, sample_length, "xpsnr"
+                )
+                ssim = _run_quality_metric(
+                    source_path, output_path, start, sample_length, "ssim"
+                )
+
+                samples.append({
+                    "sample_index": sample_index,
+                    "start": start,
+                    "length": sample_length,
+                    "qp": qp,
+                    "file": filename if keep_files else None,
+                    "bytes": file_bytes,
+                    "video_bitrate": video_bitrate,
+                    "encode_seconds": encoded.get("elapsed"),
+                    "used_hw_decode": encoded.get("used_hw_decode"),
+                    "xpsnr": xpsnr.get("value"),
+                    "ssim": ssim.get("value"),
+                    "xpsnr_error": xpsnr.get("error") if not xpsnr.get("success") else None,
+                    "ssim_error": ssim.get("error") if not ssim.get("success") else None,
+                })
+
+                completed += 1
+                _job_update(job_id, completed=completed, current=None)
+
+        qp_summary = _aggregate_qp_results(samples, sample_length)
+        quality_complete = sum(1 for r in samples if r.get("xpsnr") is not None and r.get("ssim") is not None)
+
+        result = {
+            "metric_id": metric_id,
+            "source_path": source_path,
+            "sample_length": sample_length,
+            "sample_starts": starts,
+            "qp_values": qps,
+            "quality_metrics": ["xpsnr", "ssim"],
+            "quality_complete": quality_complete,
+            "variant_count": len(samples),
+            "qp_summary": qp_summary,
+            "samples": samples,
+            "retained": keep_files,
+            "sample_directory": job_dir if keep_files else None,
+        }
+
+        if keep_files:
+            with open(os.path.join(job_dir, "result.json"), "w", encoding="utf-8") as fh:
+                json.dump(result, fh, indent=2, default=str)
+
+        finished = time.time()
+        _job_update(
+            job_id,
+            status="completed",
+            stage="done",
+            finished=finished,
+            result=result,
+            completed=total,
+            current=None,
+        )
+    except Exception as exc:
+        logger.exception("Adaptive manual sample test failed")
+        _job_update(
+            job_id,
+            status="failed",
+            stage="failed",
+            finished=time.time(),
+            error=str(exc),
+            current=None,
+        )
+    finally:
+        with _sample_job_lock:
+            snapshot = dict(_sample_jobs.get(job_id) or {})
+            _sample_active_job = None
+        _persist_sample_run(snapshot)
+        keep = bool(snapshot.get("keep_files"))
+        if job_dir and not keep:
+            try:
+                shutil.rmtree(job_dir)
+            except Exception:
+                logger.exception("Unable to remove temporary adaptive sample directory")
+
+
+def _start_sample_test(arguments):
+    global _sample_active_job
+
+    metric_id = _int(_arg(arguments, "id", 0))
+    if not metric_id:
+        return {"success": False, "message": "A metrics record ID is required."}
+
+    plan = _sample_plan({"id": metric_id})
+    if not plan.get("success"):
+        return plan
+    if not (plan.get("plan") or {}).get("can_execute_safely"):
+        return {
+            "success": False,
+            "message": (plan.get("source_check") or {}).get("message") or "Original source is not safely available.",
+        }
+
+    with _sample_job_lock:
+        if _sample_active_job:
+            active = _sample_jobs.get(_sample_active_job) or {}
+            if active.get("status") in ("queued", "running"):
+                return {
+                    "success": False,
+                    "message": "A sample test is already running.",
+                    "job_id": _sample_active_job,
+                }
+
+        job_id = "{}-{}".format(metric_id, uuid.uuid4().hex[:10])
+        record = plan.get("record") or {}
+        job = {
+            "id": job_id,
+            "metric_id": metric_id,
+            "file_name": record.get("file_name"),
+            "source_path": (plan.get("source_check") or {}).get("path"),
+            "status": "queued",
+            "stage": "queued",
+            "started": time.time(),
+            "finished": None,
+            "total": (plan.get("plan") or {}).get("encode_variants") or 0,
+            "completed": 0,
+            "current": None,
+            "keep_files": bool(settings.get_setting("keep_sample_files")),
+            "error": None,
+            "result": None,
+        }
+        _sample_jobs[job_id] = job
+        _sample_active_job = job_id
+
+    thread = threading.Thread(
+        target=_sample_test_worker,
+        args=(job_id, metric_id),
+        name="adaptive-sample-{}".format(job_id),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"success": True, "job_id": job_id, "job": job}
+
+
+def _sample_test_status(arguments):
+    job_id = str(_arg(arguments, "job_id", "") or "").strip()
+    if not job_id:
+        return {"success": False, "message": "A sample-test job ID is required."}
+    with _sample_job_lock:
+        job = _sample_jobs.get(job_id)
+        if job is None:
+            return {"success": False, "message": "Sample-test job was not found in this plugin session."}
+        return {"success": True, "job": dict(job)}
+
+
+def _sample_test_settings():
+    return {
+        "success": True,
+        "keep_sample_files": bool(settings.get_setting("keep_sample_files")),
+        "sample_count": _int(settings.get_setting("sample_count")) or 4,
+        "tv_sample_seconds": _int(settings.get_setting("tv_sample_seconds")) or 30,
+        "movie_sample_seconds": _int(settings.get_setting("movie_sample_seconds")) or 45,
+        "sample_root": _sample_root(),
+    }
 
 
 def _overview(arguments):
@@ -632,6 +1167,26 @@ def render_frontend_panel(data):
     if path == "samplePlan":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_sample_plan(args), default=str)
+        return data
+
+    if path == "startSampleTest":
+        try:
+            result = _start_sample_test(args)
+        except Exception as exc:
+            logger.exception("Unable to start adaptive sample test")
+            result = {"success": False, "message": str(exc)}
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(result, default=str)
+        return data
+
+    if path == "sampleTestStatus":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_sample_test_status(args), default=str)
+        return data
+
+    if path == "sampleSettings":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_sample_test_settings(), default=str)
         return data
 
     if path == "updateSelf":
