@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4
+
+- Removed the **Combine repeat passes** option from the main table.
+- Kept the richer per-file processing history view, so clicking a task still shows linked video/audio passes for that media file.
+- Added multi-select checkboxes and a page-level Select All checkbox.
+- Added **Delete selected** for bulk removal of metrics history entries; deleting history never deletes media files.
+- Added **Clear selection** and persistent selection while paging through results.
+- Filters now apply automatically:
+  - dropdown/date changes apply immediately;
+  - search and numeric percentage filters use a short debounce while typing.
+- Removed the Apply button and renamed Reset to **Reset filters**.
+- Added stale-request protection so quickly changing filters cannot let an older response overwrite a newer one.
+
 ## 0.1.3
 
 - Added an optional **Combine repeat passes** view that groups repeated processing of the same media file into one row.
