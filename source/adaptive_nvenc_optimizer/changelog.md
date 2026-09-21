@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1
+
+- Added **Discard as unsuitable source** inside Calibration Review for media that is a poor subjective test source, such as material where the candidates are too visually similar to judge confidently.
+- Discarded runs are permanently excluded from subjective threshold/model learning while the historical sample-test record is kept for audit/history.
+- Discarding an unsuitable run removes its retained reference/candidate clips and cached ZIP so weak calibration material does not keep consuming storage.
+- Added a **Discarded sources** counter to Calibration Review.
+- Calibration ZIP creation now starts **automatically as soon as retained candidate generation finishes** instead of waiting for Download ZIP to be clicked.
+- Existing retained runs that do not yet have a ZIP automatically start one the next time Calibration Review data is loaded.
+- Automatic ZIP preparation is shown in the review modal with live file-count/current-file progress, and retained-run cards show ZIP pending/building/ready state.
+- Download ZIP now uses the already-prepared cached archive whenever available.
+
 ## 0.6.0
 
 - Moved Calibration Review into a prominent **modal workspace** opened from a new button in the page header, so retained reviews are no longer hidden at the bottom of the dashboard.
