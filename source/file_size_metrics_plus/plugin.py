@@ -9,6 +9,7 @@ import os
 import sqlite3
 import subprocess
 import time
+import threading
 import uuid
 
 import requests
@@ -34,6 +35,8 @@ DB_PATH = os.path.join(PROFILE, "metrics_plus.db")
 CUSTOM_REPO_MATCH = "Razorsnake706/unmanic-custom-plugins"
 _REPO_REFRESH_INTERVAL = 300
 _last_direct_repo_refresh = 0.0
+_self_update_lock = threading.Lock()
+_self_update_state = {"running": False, "requested_version": None, "error": None}
 
 
 def _ensure_columns(conn, table, columns):
@@ -1196,12 +1199,93 @@ def _refresh_custom_repo_cache_direct(force=False):
         os.replace(tmp_file, cache_file)
         updated.append({
             "repo": repo_path,
+            "repo_id": repo_id,
             "cache_file": cache_file,
             "version": plugin_entry.get("version"),
         })
 
     _last_direct_repo_refresh = now
     return {"success": True, "updated": updated}
+
+
+def _self_update_worker(repo_id, requested_version):
+    global _self_update_state
+    try:
+        # Let the HTTP response that scheduled this update complete before this
+        # plugin's files/module are replaced and reloaded by Unmanic.
+        time.sleep(1.0)
+        success = PluginsHandler().install_plugin_by_id(PLUGIN_ID, repo_id=repo_id)
+        with _self_update_lock:
+            _self_update_state = {
+                "running": False,
+                "requested_version": requested_version,
+                "error": None if success else "Unmanic returned False while installing the update.",
+            }
+    except Exception as exc:
+        logger.exception("Background self-update failed")
+        with _self_update_lock:
+            _self_update_state = {
+                "running": False,
+                "requested_version": requested_version,
+                "error": str(exc),
+            }
+
+
+def _start_self_update():
+    global _self_update_state
+
+    with _self_update_lock:
+        if _self_update_state.get("running"):
+            return {
+                "success": True,
+                "scheduled": True,
+                "already_running": True,
+                "version": _self_update_state.get("requested_version"),
+            }
+
+    refreshed = _refresh_custom_repo_cache_direct(force=True)
+    if not refreshed.get("success"):
+        return refreshed
+
+    candidates = refreshed.get("updated") or []
+    if not candidates:
+        return {"success": False, "message": "Custom repository refresh returned no matching repository."}
+
+    target = candidates[0]
+    requested_version = target.get("version")
+    repo_id = target.get("repo_id")
+
+    with _self_update_lock:
+        _self_update_state = {
+            "running": True,
+            "requested_version": requested_version,
+            "error": None,
+        }
+
+    thread = threading.Thread(
+        target=_self_update_worker,
+        args=(repo_id, requested_version),
+        name="{}-self-update".format(PLUGIN_ID),
+        daemon=True,
+    )
+    thread.start()
+
+    return {
+        "success": True,
+        "scheduled": True,
+        "version": requested_version,
+    }
+
+
+def _self_update_status():
+    record = _installed_plugin_record()
+    with _self_update_lock:
+        state = dict(_self_update_state)
+    return {
+        "success": True,
+        "state": state,
+        "installed": record,
+    }
 
 
 def render_frontend_panel(data):
@@ -1239,6 +1323,21 @@ def render_frontend_panel(data):
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_import_legacy())
         return data
+    if path == "updateSelf":
+        try:
+            result = _start_self_update()
+        except Exception as exc:
+            logger.exception("Unable to schedule self-update")
+            result = {"success": False, "message": str(exc)}
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(result, default=str)
+        return data
+
+    if path == "updateStatus":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_self_update_status(), default=str)
+        return data
+
     if path == "selfRecord":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_installed_plugin_record(), default=str)
