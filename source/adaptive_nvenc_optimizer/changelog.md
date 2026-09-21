@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+- Added **fast calibration mode** for retained human-review runs: generate the NVENC candidate clips first and defer expensive CPU quality scoring until after blind review.
+- XPSNR and SSIM are now calculated together in a single FFmpeg comparison pass instead of decoding each candidate twice.
+- After all blind ratings are submitted, objective scoring is limited to the useful subjective boundary: the highest accepted candidate, the first unacceptable candidate, plus any explicitly borderline candidates.
+- Added background targeted quality scoring with live progress in Calibration Review, so the review UI remains usable while CPU metrics run.
+- Added a direct **Review retained clips** button after candidate generation completes.
+- Made the per-sample **Download Reference** and **Download Candidate A/B/C/D** controls explicit. Downloaded MKVs can be watched locally in VLC or another HEVC-capable player.
+- Candidate QP mappings remain hidden until all candidates are rated; objective scores may continue calculating afterward without blocking the human review.
+- Retained calibration files cannot be deleted while targeted objective scoring is still running.
+- Non-retained technical tests still calculate objective metrics immediately, but use the new combined XPSNR+SSIM pass.
+
 ## 0.4.0
 
 - Added a **Calibration Review** section to the Adaptive data panel.
