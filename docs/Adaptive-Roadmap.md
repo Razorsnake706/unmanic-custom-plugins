@@ -127,3 +127,7 @@ model learns from prediction error
 - Skip when confidence is poor.
 - Never use storage savings alone as the quality criterion.
 - Keep Metrics Plus history independent from optimizer decisions.
+
+## Calibration performance optimization
+
+Human calibration uses a review-first workflow: generate retained GPU candidates, collect blind subjective ratings, then calculate combined XPSNR+SSIM only around the observed quality boundary. This avoids making the user wait for CPU metrics on every candidate before clips can be reviewed and reduces the metric workload used to train the future adaptive threshold.
