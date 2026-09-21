@@ -974,11 +974,33 @@ def _overview(arguments):
             readiness = "Collecting baseline"
 
         limit = max(10, min(250, _int(_arg(arguments, "limit", 100)) or 100))
-        candidates = sorted(
-            analyzed,
-            key=lambda x: (x.get("priority") or 0, x.get("dest_size") or 0),
-            reverse=True,
-        )[:limit]
+        sort_mode = str(_arg(arguments, "sort", "newest") or "newest").strip().lower()
+        if sort_mode == "priority":
+            candidates = sorted(
+                analyzed,
+                key=lambda x: (x.get("priority") or 0, x.get("dest_size") or 0, x.get("finish_time") or 0),
+                reverse=True,
+            )[:limit]
+        else:
+            sort_mode = "newest"
+            candidates = sorted(
+                analyzed,
+                key=lambda x: (x.get("finish_time") or 0, x.get("id") or 0),
+                reverse=True,
+            )[:limit]
+
+        latest_finish = max(
+            [x.get("finish_time") or 0 for x in analyzed] or [0]
+        )
+        try:
+            db_mtime = os.path.getmtime(_metrics_db_path())
+        except OSError:
+            db_mtime = None
+        wal_path = _metrics_db_path() + "-wal"
+        try:
+            wal_mtime = os.path.getmtime(wal_path)
+        except OSError:
+            wal_mtime = None
 
         return {
             "success": True,
@@ -995,6 +1017,10 @@ def _overview(arguments):
                 "average_speed": _mean(speeds),
                 "qp_counts": qp_counts,
                 "diagnosis_counts": diagnosis_counts,
+                "latest_finish_time": latest_finish or None,
+                "metrics_db_mtime": db_mtime,
+                "metrics_wal_mtime": wal_mtime,
+                "sort_mode": sort_mode,
             },
             "candidates": candidates,
             "learning_mode": True,
