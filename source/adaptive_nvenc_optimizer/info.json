@@ -15,5 +15,5 @@
     "on_worker_process": 0
   },
   "tags": "data panel nvenc gpu adaptive optimizer analytics",
-  "version": "0.5.2"
+  "version": "0.6.0"
 }
