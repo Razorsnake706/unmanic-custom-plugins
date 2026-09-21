@@ -219,3 +219,11 @@ Rate each candidate once after comparing it against the reference across all sam
 Calibration Review is rendered inline on the Adaptive page rather than as a second modal dialog. This avoids Chromium/Opera GX behavior where transitioning directly from the sample-test dialog to another modal could leave the review invisible.
 
 Each retained run has two explicit actions: **Open review** and **Download ZIP**. Open review scrolls to the judging workspace with Candidate A/B/C/D rating buttons. Download ZIP downloads the complete blind clip set in one archive. Individual Reference/Candidate download buttons remain available inside the workspace.
+
+## Calibration Review modal and ZIP progress
+
+Calibration Review is now opened from a dedicated button in the Adaptive page header. Advisor rows with retained calibration clips also display their own **Calibration Review** button, allowing a review to open directly for that show.
+
+The review uses a browser-safe custom modal overlay rather than relying on chained HTML `<dialog>` transitions. The modal contains the retained-run list, blind Candidate A/B/C/D quality controls, individual clip downloads, revealed results after rating, and retained-file cleanup.
+
+Blind ZIP bundles are built as background jobs. While the bundle is assembled, the modal shows a progress bar with the number of files already added and the current archive entry. Once ready, the browser download begins automatically. The completed ZIP is cached for that retained run until its calibration files are cleaned up.
