@@ -2227,6 +2227,42 @@ def _rate_calibration(arguments):
     return {"success": True, "run": payload, "quality": quality}
 
 
+def _set_calibration_excluded(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    excluded_raw = str(_arg(arguments, "excluded", "1") or "1").strip().lower()
+    excluded = excluded_raw not in ("0", "false", "no", "off")
+    reason = str(_arg(arguments, "reason", "") or "").strip()
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if excluded:
+        result["calibration_excluded"] = True
+        result["calibration_excluded_reason"] = (
+            reason or "User marked this source unsuitable for subjective calibration."
+        )[:500]
+        result["calibration_excluded_at"] = time.time()
+        if result.get("quality_status") not in ("complete", "running"):
+            result["quality_status"] = "skipped_unsuitable"
+            result["quality_target_qps"] = []
+            result["quality_error"] = None
+    else:
+        result["calibration_excluded"] = False
+        result["calibration_excluded_reason"] = None
+        result["calibration_excluded_at"] = None
+        if result.get("metrics_deferred") and result.get("quality_status") == "skipped_unsuitable":
+            result["quality_status"] = "pending_review"
+            result["quality_target_qps"] = []
+            result["quality_error"] = None
+
+    _save_sample_run_result(run_id, result)
+    refreshed = _load_sample_run(run_id)
+    payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {"success": True, "run": payload}
+
+
 def _safe_calibration_file(arguments):
     run_id = str(_arg(arguments, "run_id", "") or "").strip()
     kind = str(_arg(arguments, "kind", "") or "").strip().lower()
@@ -3109,6 +3145,11 @@ def render_frontend_panel(data):
     if path == "calibrationRuns":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_calibration_runs(), default=str)
+        return data
+
+    if path == "setCalibrationExcluded":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_set_calibration_excluded(args), default=str)
         return data
 
     if path == "rateCalibration":
