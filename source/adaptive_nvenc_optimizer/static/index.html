@@ -13,21 +13,22 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 .banner{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.badge{display:inline-flex;padding:3px 8px;border-radius:99px;background:var(--panel2);font-size:11px;font-weight:800}.learning{background:#3b2f0d;color:#ffd66e}
 .grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:10px;margin-bottom:12px}.card{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:21px;font-weight:850;margin-top:3px}.tiny{font-size:11px;color:var(--muted);margin-top:4px}
 .two{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:12px}.section{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px}.section h2{font-size:15px;margin:0 0 9px}.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}.progress>div{height:100%;background:var(--accent)}.diag-grid{display:flex;gap:7px;flex-wrap:wrap}.diag{padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel2);font-size:12px}
-.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:1900px;min-width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1}tbody tr:hover{background:var(--panel2)}.file{font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}.muted{color:var(--muted)}.status{font-weight:800;white-space:normal;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-.reason{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.empty{padding:25px;text-align:center;color:var(--muted)}
+.table-tools{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:1900px;min-width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1;user-select:none}th[data-col]{position:sticky}tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--panel2)}.file{font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}.muted{color:var(--muted)}.status{font-weight:800;white-space:normal;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.reason{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.empty{padding:25px;text-align:center;color:var(--muted)}.resize-handle{position:absolute;right:-3px;top:0;width:8px;height:100%;cursor:col-resize;z-index:5}.resize-handle:after{content:"";position:absolute;right:3px;top:18%;height:64%;border-right:1px solid rgba(128,128,128,.5)}
+dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;background:transparent;color:var(--text)}dialog::backdrop{background:rgba(0,0,0,.6)}.dialog{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;max-height:90vh;overflow:auto}.dialog h3{margin:0 0 5px}.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}.plan-card{background:var(--panel2);border-radius:8px;padding:10px}.plan-card .label{display:block}.plan-card strong{display:block;margin-top:3px;overflow-wrap:anywhere}.timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.pill{display:inline-flex;padding:4px 7px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);font-size:12px}.source-ok{color:var(--good)}.source-no{color:var(--warn)}
 @media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr)}.two{grid-template-columns:1fr}}@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.1.1</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.1.2</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
 
 <div class="banner">
-  <div><strong>Phase 1: Learning mode</strong><div class="sub">Read-only analysis of File Size Metrics Plus. This release does not alter media files or encoder settings.</div></div>
+  <div><strong>Phase 1/2: Learning + calibration prep</strong><div class="sub">Read-only analysis plus sample-test planning. This release still does not alter media files or encoder settings.</div></div>
   <span class="badge learning">OBSERVE ONLY</span>
 </div>
 
@@ -55,26 +56,40 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 
 <div class="section" style="margin-bottom:8px">
   <h2>Encode advisor</h2>
-  <div class="sub">Rows are ranked by how useful they may be for future adaptive sample testing. These are explanations, not automatic re-encode commands yet.</div>
+  <div class="sub">Rows are ranked by how useful they may be for future adaptive sample testing. Click a row to build a safe sample-test plan. No samples are encoded yet.</div>
 </div>
 
-<div class="table-wrap">
+<div class="table-tools"><div class="sub">Drag column dividers to resize. Widths are saved in this browser.</div><button id="resetCols" class="btn">Reset column widths</button></div>
+<div class="table-wrap" id="advisorWrap">
 <table>
 <colgroup>
-<col style="width:470px"><col style="width:150px"><col style="width:135px"><col style="width:180px"><col style="width:120px"><col style="width:100px"><col style="width:60px"><col style="width:70px"><col style="width:80px"><col style="width:80px"><col style="width:355px">
+<col data-col="file" style="width:470px"><col data-col="diagnosis" style="width:150px"><col data-col="saved" style="width:135px"><col data-col="video_bitrate" style="width:180px"><col data-col="video_reduction" style="width:120px"><col data-col="audio_share" style="width:100px"><col data-col="qp" style="width:60px"><col data-col="preset" style="width:70px"><col data-col="speed" style="width:80px"><col data-col="data" style="width:80px"><col data-col="why" style="width:355px">
 </colgroup>
 <thead><tr>
-<th>File</th><th>Diagnosis</th><th>Saved</th><th>Video bitrate</th><th>Video reduction</th><th>Audio share</th><th>QP</th><th>Preset</th><th>Speed</th><th>Data</th><th>Why</th>
+<th data-col="file">File<span class="resize-handle"></span></th><th data-col="diagnosis">Diagnosis<span class="resize-handle"></span></th><th data-col="saved">Saved<span class="resize-handle"></span></th><th data-col="video_bitrate">Video bitrate<span class="resize-handle"></span></th><th data-col="video_reduction">Video reduction<span class="resize-handle"></span></th><th data-col="audio_share">Audio share<span class="resize-handle"></span></th><th data-col="qp">QP<span class="resize-handle"></span></th><th data-col="preset">Preset<span class="resize-handle"></span></th><th data-col="speed">Speed<span class="resize-handle"></span></th><th data-col="data">Data<span class="resize-handle"></span></th><th data-col="why">Why<span class="resize-handle"></span></th>
 </tr></thead>
 <tbody id="rows"><tr><td colspan="11" class="empty">Loading Metrics Plus data…</td></tr></tbody>
 </table>
 </div>
 </div>
 
+<dialog id="planDialog"><div class="dialog">
+  <h3 id="planTitle">Sample-test plan</h3>
+  <div id="planSubtitle" class="sub"></div>
+  <div id="sourceCheck" style="margin:12px 0"></div>
+  <div id="planGrid" class="plan-grid"></div>
+  <div class="section" style="margin-top:10px"><h2>Representative sample positions</h2><div id="sampleTimes" class="timeline"></div></div>
+  <div class="section" style="margin-top:10px"><h2>QP ladder</h2><div id="qpValues" class="timeline"></div></div>
+  <div class="sub" style="margin-top:12px">Planning only: this release does not run FFmpeg sample encodes yet. The next phase will execute these short GPU tests only when the original source is still available.</div>
+  <p><button id="closePlan" class="btn">Close</button></p>
+</div></dialog>
+
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.1.1';
+const PLUGIN_VERSION='0.1.2';
 const $=id=>document.getElementById(id);
+const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
+const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
 const bitrate=v=>{if(v===null||v===undefined)return'—';const n=Number(v);return n>=1e6?(n/1e6).toFixed(2)+' Mbps':(n/1e3).toFixed(0)+' kbps'};
@@ -83,6 +98,58 @@ function base(){const p=location.pathname.replace(/\/$/,'');return p+'/'}
 function notice(msg){$('notice').textContent=msg;$('notice').classList.add('show');setTimeout(()=>$('notice').classList.remove('show'),7000)}
 function compareVersions(a,b){const x=String(a||'').split('.').map(Number),y=String(b||'').split('.').map(Number);for(let i=0;i<Math.max(x.length,y.length);i++){if((x[i]||0)>(y[i]||0))return 1;if((x[i]||0)<(y[i]||0))return-1}return 0}
 async function readJsonResponse(r){const t=await r.text();if(!t)return{};try{return JSON.parse(t)}catch(e){return{success:false,_raw:t}}}
+
+function timecode(seconds){
+  if(seconds===null||seconds===undefined)return'—';
+  let s=Math.max(0,Math.round(Number(seconds))),h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;
+  return h?String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'):String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')
+}
+function humanTime(seconds){
+  if(seconds===null||seconds===undefined)return'—';
+  let s=Math.max(0,Math.round(Number(seconds))),m=Math.floor(s/60);s%=60;
+  return m?m+'m '+s+'s':s+'s'
+}
+function loadColumnWidths(){
+  let saved={};
+  try{saved=JSON.parse(localStorage.getItem(COLUMN_WIDTH_KEY)||'{}')}catch(e){}
+  Object.keys(DEFAULT_WIDTHS).forEach(function(key){
+    const col=document.querySelector('col[data-col="'+key+'"]');
+    if(col)col.style.width=(Number(saved[key])||DEFAULT_WIDTHS[key])+'px'
+  });
+  syncTableWidth()
+}
+function saveColumnWidths(){
+  const out={};
+  Object.keys(DEFAULT_WIDTHS).forEach(function(key){
+    const col=document.querySelector('col[data-col="'+key+'"]');
+    if(col)out[key]=Math.round(parseFloat(col.style.width)||DEFAULT_WIDTHS[key])
+  });
+  localStorage.setItem(COLUMN_WIDTH_KEY,JSON.stringify(out))
+}
+function syncTableWidth(){
+  const table=document.querySelector('.table-wrap table');
+  const wrap=$('advisorWrap');
+  if(!table||!wrap)return;
+  let total=0;
+  document.querySelectorAll('col[data-col]').forEach(function(col){total+=parseFloat(col.style.width)||0});
+  table.style.width=Math.max(total,wrap.clientWidth)+'px'
+}
+function setupResizers(){
+  document.querySelectorAll('th[data-col] .resize-handle').forEach(function(handle){
+    handle.addEventListener('mousedown',function(e){
+      e.preventDefault();e.stopPropagation();
+      const th=handle.parentElement,key=th.dataset.col,col=document.querySelector('col[data-col="'+key+'"]');
+      if(!col)return;
+      const startX=e.clientX,startW=parseFloat(col.style.width)||th.getBoundingClientRect().width;
+      document.body.style.cursor='col-resize';
+      const move=function(ev){col.style.width=Math.max(55,startW+(ev.clientX-startX))+'px';syncTableWidth()};
+      const up=function(){document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);document.body.style.cursor='';saveColumnWidths()};
+      document.addEventListener('mousemove',move);document.addEventListener('mouseup',up)
+    })
+  });
+  $('resetCols').onclick=function(){localStorage.removeItem(COLUMN_WIDTH_KEY);loadColumnWidths()};
+  window.addEventListener('resize',syncTableWidth)
+}
 
 function statusClass(s){if(s==='Good compression'||s==='Already efficient')return'good';if(s==='Sample-test candidate')return'bad';return'warn'}
 
@@ -109,7 +176,7 @@ async function load(){
     $('diagnoses').innerHTML=Object.keys(dc).length?Object.entries(dc).map(([k,v])=>'<span class="diag"><strong>'+esc(v)+'</strong> '+esc(k)+'</span>').join(''):'<span class="muted">No diagnosable NVENC records yet.</span>';
 
     const items=d.candidates||[];
-    $('rows').innerHTML=items.length?items.map(x=>'<tr>'+
+    $('rows').innerHTML=items.length?items.map(x=>'<tr data-id="'+esc(x.id)+'" title="Click to build sample-test plan">'+
       '<td class="file">'+esc(x.file_name||'Unknown')+'<div class="sub">'+esc(x.library_name||'')+'</div></td>'+
       '<td class="status '+statusClass(x.diagnosis)+'">'+esc(x.diagnosis)+'</td>'+
       '<td>'+pct(x.percent_saved)+'<div class="sub">'+bytes(x.source_size)+' → '+bytes(x.dest_size)+'</div></td>'+
@@ -121,8 +188,32 @@ async function load(){
       '<td>'+(x.encode_speed?Number(x.encode_speed).toFixed(1)+'×':'—')+'</td>'+
       '<td>'+pct(x.completeness)+'</td>'+
       '<td class="reason">'+esc(x.reason||'')+'</td>'+
-    '</tr>').join(''):'<tr><td colspan="11" class="empty">No NVENC records with adaptive metrics yet.</td></tr>'
+    '</tr>').join(''):'<tr><td colspan="11" class="empty">No NVENC records with adaptive metrics yet.</td></tr>';
+    document.querySelectorAll('tbody tr[data-id]').forEach(function(tr){tr.onclick=function(){openSamplePlan(tr.dataset.id)}});
   }catch(e){notice('Unable to load advisor data: '+e.message)}
+}
+
+async function openSamplePlan(id){
+  try{
+    const r=await fetch(base()+'samplePlan?'+new URLSearchParams({id:id,_:Date.now()}),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to build sample plan');
+    const rec=d.record||{},check=d.source_check||{},plan=d.plan||{};
+    $('planTitle').textContent=rec.file_name||'Sample-test plan';
+    $('planSubtitle').textContent=(rec.diagnosis||'')+(rec.reason?' · '+rec.reason:'');
+    $('sourceCheck').innerHTML='<strong class="'+(check.original_available?'source-ok':'source-no')+'">'+(check.original_available?'Original source appears available':'Original source not safely available')+'</strong><div class="sub">'+esc(check.message||'')+'</div>';
+    $('planGrid').innerHTML=[
+      ['Current QP',rec.encoder_quality??'—'],
+      ['Diagnosis',rec.diagnosis||'—'],
+      ['Sample length',humanTime(plan.sample_length)],
+      ['Test variants',Number(plan.encode_variants||0).toLocaleString()],
+      ['Estimated NVENC time',humanTime(plan.estimated_nvenc_seconds)],
+      ['Quality metrics',(plan.quality_metrics||[]).join(' + ')||'—']
+    ].map(function(x){return'<div class="plan-card"><span class="label">'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>'}).join('');
+    $('sampleTimes').innerHTML=(plan.sample_starts||[]).map(function(v){return'<span class="pill">'+timecode(v)+' → '+timecode(Number(v)+Number(plan.sample_length||0))+'</span>'}).join('')||'<span class="muted">No safe sample positions available.</span>';
+    $('qpValues').innerHTML=(plan.qp_values||[]).map(function(v){return'<span class="pill">QP '+esc(v)+'</span>'}).join('');
+    $('planDialog').showModal()
+  }catch(e){notice('Unable to build sample plan: '+e.message)}
 }
 
 async function refreshRepo(){
@@ -164,6 +255,10 @@ async function updatePlugin(){
 
 $('refresh').onclick=load;
 $('updatePlugin').onclick=updatePlugin;
+$('closePlan').onclick=function(){$('planDialog').close()};
+$('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
+loadColumnWidths();
+setupResizers();
 load();
 </script>
 </body>
