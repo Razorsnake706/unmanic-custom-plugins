@@ -2441,6 +2441,60 @@ def _bundle_job_snapshot(job):
     }
 
 
+def _bundle_identity(run_id):
+    run_id = str(run_id or "").strip()
+    job_id = "bundle-{}".format(run_id)
+    safe_id = "".join(ch for ch in run_id if ch.isalnum() or ch in ("-", "_"))[:120] or "calibration"
+    bundle_path = os.path.join(_bundle_root(), safe_id + ".zip")
+    run = _load_sample_run(run_id)
+    filename = "{} - blind calibration clips.zip".format(
+        (run or {}).get("file_name") or "calibration"
+    )
+    return job_id, bundle_path, filename
+
+
+def _bundle_state_for_run(run_id):
+    job_id, bundle_path, filename = _bundle_identity(run_id)
+    with _bundle_job_lock:
+        existing = _bundle_jobs.get(job_id)
+        if existing:
+            return _bundle_job_snapshot(existing)
+
+    if os.path.isfile(bundle_path):
+        try:
+            with zipfile.ZipFile(bundle_path, "r") as archive:
+                total = len(archive.namelist())
+        except Exception:
+            total = None
+        ready = {
+            "id": job_id,
+            "run_id": str(run_id),
+            "status": "ready",
+            "total": total,
+            "completed": total,
+            "current": None,
+            "bytes": os.path.getsize(bundle_path),
+            "error": None,
+            "path": bundle_path,
+            "filename": filename,
+        }
+        with _bundle_job_lock:
+            _bundle_jobs[job_id] = ready
+        return _bundle_job_snapshot(ready)
+
+    return {
+        "id": job_id,
+        "run_id": str(run_id),
+        "status": "not_started",
+        "total": 0,
+        "completed": 0,
+        "current": None,
+        "bytes": None,
+        "error": None,
+        "filename": filename,
+    }
+
+
 def _bundle_worker(job_id, run_id, files, bundle_path):
     try:
         with _bundle_job_lock:
@@ -2499,17 +2553,14 @@ def _start_calibration_bundle(arguments):
     if not run_id:
         return {"success": False, "message": "Calibration run ID is required."}
 
-    try:
-        files = _bundle_source_files(run_id)
-    except Exception as exc:
-        return {"success": False, "message": str(exc)}
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+    result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return {"success": False, "message": "Calibration run was discarded as unsuitable."}
 
-    job_id = "bundle-{}".format(run_id)
-    safe_id = "".join(ch for ch in run_id if ch.isalnum() or ch in ("-", "_"))[:120] or "calibration"
-    bundle_path = os.path.join(_bundle_root(), safe_id + ".zip")
-    filename = "{} - blind calibration clips.zip".format(
-        (_load_sample_run(run_id) or {}).get("file_name") or "calibration"
-    )
+    job_id, bundle_path, filename = _bundle_identity(run_id)
 
     with _bundle_job_lock:
         existing = _bundle_jobs.get(job_id)
@@ -2518,51 +2569,44 @@ def _start_calibration_bundle(arguments):
                 return {"success": True, "job": _bundle_job_snapshot(existing)}
             if (
                 existing.get("status") == "ready"
-                and os.path.isfile(existing.get("path") or "")
+                and os.path.isfile(existing.get("path") or bundle_path)
             ):
                 return {"success": True, "job": _bundle_job_snapshot(existing)}
 
-        if os.path.isfile(bundle_path):
-            _bundle_jobs[job_id] = {
-                "id": job_id,
-                "run_id": run_id,
-                "status": "ready",
-                "total": len(files),
-                "completed": len(files),
-                "current": None,
-                "bytes": os.path.getsize(bundle_path),
-                "error": None,
-                "path": bundle_path,
-                "filename": filename,
-            }
-            return {
-                "success": True,
-                "job": _bundle_job_snapshot(_bundle_jobs[job_id]),
-            }
+    if os.path.isfile(bundle_path):
+        state = _bundle_state_for_run(run_id)
+        return {"success": True, "job": state}
 
-        job = {
-            "id": job_id,
-            "run_id": run_id,
-            "status": "queued",
-            "total": len(files),
-            "completed": 0,
-            "current": None,
-            "bytes": None,
-            "error": None,
-            "path": bundle_path,
-            "filename": filename,
-        }
+    try:
+        files = _bundle_source_files(run_id)
+    except Exception as exc:
+        return {"success": False, "message": str(exc)}
+
+    job = {
+        "id": job_id,
+        "run_id": run_id,
+        "status": "queued",
+        "total": len(files),
+        "completed": 0,
+        "current": None,
+        "bytes": None,
+        "error": None,
+        "path": bundle_path,
+        "filename": filename,
+    }
+    with _bundle_job_lock:
         _bundle_jobs[job_id] = job
 
     thread = threading.Thread(
         target=_bundle_worker,
         args=(job_id, run_id, files, bundle_path),
-        name="adaptive-bundle-{}".format(safe_id),
+        name="adaptive-bundle-{}".format(job_id[:80]),
         daemon=True,
     )
     thread.start()
 
     return {"success": True, "job": _bundle_job_snapshot(job)}
+
 
 
 def _calibration_bundle_status(arguments):
