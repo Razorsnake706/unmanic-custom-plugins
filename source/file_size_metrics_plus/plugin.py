@@ -12,6 +12,8 @@ import time
 import uuid
 
 import requests
+import re
+import shlex
 
 from unmanic.libs.library import Library
 from unmanic.libs.logs import UnmanicLogging
@@ -34,6 +36,13 @@ _REPO_REFRESH_INTERVAL = 300
 _last_direct_repo_refresh = 0.0
 
 
+def _ensure_columns(conn, table, columns):
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info({})".format(table)).fetchall()}
+    for name, sql_type in columns.items():
+        if name not in existing:
+            conn.execute("ALTER TABLE {} ADD COLUMN {} {}".format(table, name, sql_type))
+
+
 def _db():
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -43,7 +52,8 @@ def _db():
     CREATE TABLE IF NOT EXISTS pending (
       task_key TEXT PRIMARY KEY, task_id INTEGER, library_id INTEGER,
       source_path TEXT, source_size INTEGER, source_probe TEXT,
-      worker TEXT, started REAL
+      worker TEXT, started REAL,
+      worker_runners_json TEXT, encoder_commands_json TEXT
     );
     CREATE TABLE IF NOT EXISTS metrics (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,12 +68,60 @@ def _db():
       dest_width INTEGER, dest_height INTEGER,
       source_pix_fmt TEXT, dest_pix_fmt TEXT,
       source_audio TEXT, dest_audio TEXT,
+      source_duration REAL, dest_duration REAL,
+      source_total_bitrate INTEGER, dest_total_bitrate INTEGER,
+      source_video_bitrate INTEGER, dest_video_bitrate INTEGER,
+      source_audio_bitrate INTEGER, dest_audio_bitrate INTEGER,
+      source_fps REAL, dest_fps REAL,
+      source_bit_depth INTEGER, dest_bit_depth INTEGER,
+      source_format TEXT, dest_format TEXT,
+      source_color_transfer TEXT, dest_color_transfer TEXT,
+      source_color_primaries TEXT, dest_color_primaries TEXT,
+      source_color_space TEXT, dest_color_space TEXT,
+      source_hdr INTEGER, dest_hdr INTEGER,
+      source_audio_streams INTEGER, dest_audio_streams INTEGER,
+      source_subtitle_streams INTEGER, dest_subtitle_streams INTEGER,
+      source_probe_json TEXT, dest_probe_json TEXT,
+      worker_runners_json TEXT, encoder_commands_json TEXT,
+      encoder_name TEXT, encoder_rate_control TEXT, encoder_quality REAL,
+      encoder_preset TEXT, encoder_tune TEXT, encoder_profile TEXT,
+      encoder_lookahead INTEGER, encoder_spatial_aq INTEGER,
+      encoder_temporal_aq INTEGER, encoder_aq_strength INTEGER,
+      encoder_hwaccel TEXT,
       imported INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_metrics_finish ON metrics(finish_time);
     CREATE INDEX IF NOT EXISTS idx_metrics_library ON metrics(library_id);
     CREATE INDEX IF NOT EXISTS idx_metrics_codecs ON metrics(source_codec, dest_codec);
     """)
+
+    # Upgrade existing installations in place without touching historical rows.
+    _ensure_columns(conn, "pending", {
+        "worker_runners_json": "TEXT",
+        "encoder_commands_json": "TEXT",
+    })
+    _ensure_columns(conn, "metrics", {
+        "source_duration": "REAL", "dest_duration": "REAL",
+        "source_total_bitrate": "INTEGER", "dest_total_bitrate": "INTEGER",
+        "source_video_bitrate": "INTEGER", "dest_video_bitrate": "INTEGER",
+        "source_audio_bitrate": "INTEGER", "dest_audio_bitrate": "INTEGER",
+        "source_fps": "REAL", "dest_fps": "REAL",
+        "source_bit_depth": "INTEGER", "dest_bit_depth": "INTEGER",
+        "source_format": "TEXT", "dest_format": "TEXT",
+        "source_color_transfer": "TEXT", "dest_color_transfer": "TEXT",
+        "source_color_primaries": "TEXT", "dest_color_primaries": "TEXT",
+        "source_color_space": "TEXT", "dest_color_space": "TEXT",
+        "source_hdr": "INTEGER", "dest_hdr": "INTEGER",
+        "source_audio_streams": "INTEGER", "dest_audio_streams": "INTEGER",
+        "source_subtitle_streams": "INTEGER", "dest_subtitle_streams": "INTEGER",
+        "source_probe_json": "TEXT", "dest_probe_json": "TEXT",
+        "worker_runners_json": "TEXT", "encoder_commands_json": "TEXT",
+        "encoder_name": "TEXT", "encoder_rate_control": "TEXT", "encoder_quality": "REAL",
+        "encoder_preset": "TEXT", "encoder_tune": "TEXT", "encoder_profile": "TEXT",
+        "encoder_lookahead": "INTEGER", "encoder_spatial_aq": "INTEGER",
+        "encoder_temporal_aq": "INTEGER", "encoder_aq_strength": "INTEGER",
+        "encoder_hwaccel": "TEXT",
+    })
     return conn
 
 
@@ -102,6 +160,36 @@ def _library_name(library_id):
         return f"Library {library_id}" if library_id is not None else None
 
 
+def _rational(value):
+    if value in (None, "", "0/0", "N/A"):
+        return None
+    text = str(value)
+    try:
+        if "/" in text:
+            a, b = text.split("/", 1)
+            b = float(b)
+            return float(a) / b if b else None
+        return float(text)
+    except Exception:
+        return None
+
+
+def _bit_depth(video):
+    raw = _num(video.get("bits_per_raw_sample"))
+    if raw:
+        return raw
+    pix = str(video.get("pix_fmt") or "").lower()
+    match = re.search(r"(?:p|yuv\d*p?)(10|12|14|16)(?:le|be)?$", pix)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"(10|12|14|16)(?:le|be)", pix)
+    if match:
+        return int(match.group(1))
+    if pix:
+        return 8
+    return None
+
+
 def _probe(path):
     if not path or not os.path.exists(path):
         return {}
@@ -114,12 +202,17 @@ def _probe(path):
     except Exception:
         logger.exception("ffprobe failed for %s", path)
         return {}
+
     streams = payload.get("streams") or []
+    fmt = payload.get("format") or {}
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
+    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
+
     audios = []
-    for s in streams:
-        if s.get("codec_type") != "audio":
-            continue
+    audio_bitrates = []
+    audio_details = []
+    for s in audio_streams:
         label = s.get("codec_name") or "unknown"
         if s.get("profile") and str(s.get("profile")).lower() not in ("unknown", "none"):
             label += f" {s.get('profile')}"
@@ -127,19 +220,116 @@ def _probe(path):
             label += f" {s.get('channels')}ch"
         bit_rate = _num(s.get("bit_rate"))
         if bit_rate:
+            audio_bitrates.append(bit_rate)
             label += f" {round(bit_rate / 1000)}kbps"
         lang = (s.get("tags") or {}).get("language")
         if lang:
             label += f" {lang}"
         audios.append(label)
+        audio_details.append({
+            "codec": s.get("codec_name"),
+            "profile": s.get("profile"),
+            "channels": _num(s.get("channels")),
+            "channel_layout": s.get("channel_layout"),
+            "bit_rate": bit_rate,
+            "language": lang,
+            "sample_rate": _num(s.get("sample_rate")),
+        })
+
+    duration = _float(fmt.get("duration")) or _float(video.get("duration"))
+    actual_size = _size(path)
+    total_bitrate = _num(fmt.get("bit_rate"))
+    if duration and actual_size:
+        # File size / duration is more consistently available than container bit_rate,
+        # especially for MKV files.
+        total_bitrate = int((actual_size * 8) / duration)
+
+    audio_bitrate = sum(audio_bitrates) if audio_bitrates else None
+    video_bitrate = _num(video.get("bit_rate"))
+    if video_bitrate is None and total_bitrate is not None and audio_bitrate is not None:
+        estimate = total_bitrate - audio_bitrate
+        video_bitrate = estimate if estimate > 0 else None
+
+    transfer = video.get("color_transfer")
+    primaries = video.get("color_primaries")
+    hdr = 1 if str(transfer or "").lower() in ("smpte2084", "arib-std-b67") else 0
+
     return {
         "codec": video.get("codec_name"),
         "profile": video.get("profile"),
+        "level": _num(video.get("level")),
         "width": _num(video.get("width")),
         "height": _num(video.get("height")),
         "pix_fmt": video.get("pix_fmt"),
+        "bit_depth": _bit_depth(video),
+        "fps": _rational(video.get("avg_frame_rate")) or _rational(video.get("r_frame_rate")),
+        "video_bitrate": video_bitrate,
+        "total_bitrate": total_bitrate,
+        "duration": duration,
+        "format_name": fmt.get("format_name"),
+        "format_long_name": fmt.get("format_long_name"),
+        "color_transfer": transfer,
+        "color_primaries": primaries,
+        "color_space": video.get("color_space"),
+        "color_range": video.get("color_range"),
+        "hdr": hdr,
         "audio": ", ".join(audios) if audios else None,
+        "audio_bitrate": audio_bitrate,
+        "audio_streams": len(audio_streams),
+        "subtitle_streams": len(subtitle_streams),
+        "audio_details": audio_details,
+        "stream_count": len(streams),
     }
+
+
+def _extract_commands(worker_log):
+    commands = []
+    logs = list(worker_log or [])
+    for i, item in enumerate(logs):
+        if str(item).strip() != "COMMAND:":
+            continue
+        for candidate in logs[i + 1:i + 4]:
+            text = str(candidate or "").strip()
+            if text:
+                commands.append(text)
+                break
+    return commands
+
+
+def _encoder_settings(commands):
+    result = {}
+    for command in commands or []:
+        try:
+            tokens = shlex.split(command)
+        except Exception:
+            tokens = str(command).split()
+
+        def value_for(prefixes):
+            for i, token in enumerate(tokens[:-1]):
+                if any(token == p or token.startswith(p + ":") for p in prefixes):
+                    return tokens[i + 1]
+            return None
+
+        encoder = value_for(["-c:v", "-codec:v", "-vcodec"])
+        if not encoder:
+            continue
+        if "nvenc" not in str(encoder).lower() and encoder in ("copy",):
+            continue
+
+        result["encoder_name"] = encoder
+        result["encoder_rate_control"] = value_for(["-rc:v", "-rc"])
+        quality = value_for(["-qp:v", "-qp", "-cq:v", "-cq"])
+        result["encoder_quality"] = _float(quality)
+        result["encoder_preset"] = value_for(["-preset"])
+        result["encoder_tune"] = value_for(["-tune"])
+        result["encoder_profile"] = value_for(["-profile:v", "-profile"])
+        result["encoder_lookahead"] = _num(value_for(["-rc-lookahead:v", "-rc-lookahead"]))
+        result["encoder_spatial_aq"] = _num(value_for(["-spatial-aq:v", "-spatial-aq"]))
+        result["encoder_temporal_aq"] = _num(value_for(["-temporal-aq:v", "-temporal-aq"]))
+        result["encoder_aq_strength"] = _num(value_for(["-aq-strength:v", "-aq-strength"]))
+        result["encoder_hwaccel"] = value_for(["-hwaccel"])
+        break
+    return result
 
 
 def emit_task_scheduled(data, task_data_store=None, file_metadata=None):
@@ -160,6 +350,26 @@ def emit_task_scheduled(data, task_data_store=None, file_metadata=None):
             ))
     except Exception:
         logger.exception("Unable to capture source metrics")
+
+
+def emit_worker_process_complete(data, task_data_store=None):
+    try:
+        task_id = _num(data.get("task_id"))
+        library_id = _num(data.get("library_id"))
+        commands = _extract_commands(data.get("worker_log") or [])
+        runners = data.get("worker_runners_info") or {}
+        with _db() as conn:
+            pending = conn.execute(
+                "SELECT task_key FROM pending WHERE task_id=? AND library_id=? ORDER BY started DESC LIMIT 1",
+                (task_id, library_id),
+            ).fetchone()
+            if pending:
+                conn.execute(
+                    "UPDATE pending SET worker_runners_json=?, encoder_commands_json=? WHERE task_key=?",
+                    (json.dumps(runners), json.dumps(commands), pending["task_key"]),
+                )
+    except Exception:
+        logger.exception("Unable to capture worker runner/command metadata")
 
 
 def _record_completion(data, worker_override=None, success_override=None):
@@ -199,36 +409,61 @@ def _record_completion(data, worker_override=None, success_override=None):
         file_name = os.path.basename(dest or source or "UNKNOWN")
         library_id = _num(data.get("library_id"))
 
-        values = (
-            key, _num(data.get("task_id")), library_id, _library_name(library_id), file_name,
-            1 if success else 0, start, finish, duration, worker,
-            source, dest, source_size, dest_size, saved, pct,
-            source_probe.get("codec"), dest_probe.get("codec"),
-            source_probe.get("profile"), dest_probe.get("profile"),
-            source_probe.get("width"), source_probe.get("height"),
-            dest_probe.get("width"), dest_probe.get("height"),
-            source_probe.get("pix_fmt"), dest_probe.get("pix_fmt"),
-            source_probe.get("audio"), dest_probe.get("audio"), 0,
+        runners_json = pending["worker_runners_json"] if pending and "worker_runners_json" in pending.keys() else None
+        commands_json = pending["encoder_commands_json"] if pending and "encoder_commands_json" in pending.keys() else None
+        try:
+            commands = json.loads(commands_json or "[]")
+        except Exception:
+            commands = []
+        encoder = _encoder_settings(commands)
+
+        values = {
+            "task_key": key, "task_id": _num(data.get("task_id")), "library_id": library_id,
+            "library_name": _library_name(library_id), "file_name": file_name,
+            "success": 1 if success else 0, "start_time": start, "finish_time": finish,
+            "duration": duration, "worker": worker, "source_path": source, "dest_path": dest,
+            "source_size": source_size, "dest_size": dest_size, "bytes_saved": saved, "percent_saved": pct,
+            "source_codec": source_probe.get("codec"), "dest_codec": dest_probe.get("codec"),
+            "source_profile": source_probe.get("profile"), "dest_profile": dest_probe.get("profile"),
+            "source_width": source_probe.get("width"), "source_height": source_probe.get("height"),
+            "dest_width": dest_probe.get("width"), "dest_height": dest_probe.get("height"),
+            "source_pix_fmt": source_probe.get("pix_fmt"), "dest_pix_fmt": dest_probe.get("pix_fmt"),
+            "source_audio": source_probe.get("audio"), "dest_audio": dest_probe.get("audio"),
+            "source_duration": source_probe.get("duration"), "dest_duration": dest_probe.get("duration"),
+            "source_total_bitrate": source_probe.get("total_bitrate"), "dest_total_bitrate": dest_probe.get("total_bitrate"),
+            "source_video_bitrate": source_probe.get("video_bitrate"), "dest_video_bitrate": dest_probe.get("video_bitrate"),
+            "source_audio_bitrate": source_probe.get("audio_bitrate"), "dest_audio_bitrate": dest_probe.get("audio_bitrate"),
+            "source_fps": source_probe.get("fps"), "dest_fps": dest_probe.get("fps"),
+            "source_bit_depth": source_probe.get("bit_depth"), "dest_bit_depth": dest_probe.get("bit_depth"),
+            "source_format": source_probe.get("format_name"), "dest_format": dest_probe.get("format_name"),
+            "source_color_transfer": source_probe.get("color_transfer"), "dest_color_transfer": dest_probe.get("color_transfer"),
+            "source_color_primaries": source_probe.get("color_primaries"), "dest_color_primaries": dest_probe.get("color_primaries"),
+            "source_color_space": source_probe.get("color_space"), "dest_color_space": dest_probe.get("color_space"),
+            "source_hdr": source_probe.get("hdr"), "dest_hdr": dest_probe.get("hdr"),
+            "source_audio_streams": source_probe.get("audio_streams"), "dest_audio_streams": dest_probe.get("audio_streams"),
+            "source_subtitle_streams": source_probe.get("subtitle_streams"), "dest_subtitle_streams": dest_probe.get("subtitle_streams"),
+            "source_probe_json": json.dumps(source_probe), "dest_probe_json": json.dumps(dest_probe),
+            "worker_runners_json": runners_json, "encoder_commands_json": commands_json,
+            "encoder_name": encoder.get("encoder_name"), "encoder_rate_control": encoder.get("encoder_rate_control"),
+            "encoder_quality": encoder.get("encoder_quality"), "encoder_preset": encoder.get("encoder_preset"),
+            "encoder_tune": encoder.get("encoder_tune"), "encoder_profile": encoder.get("encoder_profile"),
+            "encoder_lookahead": encoder.get("encoder_lookahead"), "encoder_spatial_aq": encoder.get("encoder_spatial_aq"),
+            "encoder_temporal_aq": encoder.get("encoder_temporal_aq"), "encoder_aq_strength": encoder.get("encoder_aq_strength"),
+            "encoder_hwaccel": encoder.get("encoder_hwaccel"), "imported": 0,
+        }
+
+        columns = list(values.keys())
+        placeholders = ",".join("?" for _ in columns)
+        update_cols = [col for col in columns if col != "task_key"]
+        sql = (
+            "INSERT INTO metrics({}) VALUES({}) "
+            "ON CONFLICT(task_key) DO UPDATE SET {}"
+        ).format(
+            ",".join(columns),
+            placeholders,
+            ",".join("{}=excluded.{}".format(col, col) for col in update_cols),
         )
-        conn.execute("""
-          INSERT INTO metrics(
-            task_key,task_id,library_id,library_name,file_name,success,start_time,finish_time,duration,worker,
-            source_path,dest_path,source_size,dest_size,bytes_saved,percent_saved,
-            source_codec,dest_codec,source_profile,dest_profile,source_width,source_height,dest_width,dest_height,
-            source_pix_fmt,dest_pix_fmt,source_audio,dest_audio,imported
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-          ON CONFLICT(task_key) DO UPDATE SET
-            library_name=excluded.library_name,file_name=excluded.file_name,success=excluded.success,
-            start_time=excluded.start_time,finish_time=excluded.finish_time,duration=excluded.duration,
-            worker=excluded.worker,source_path=excluded.source_path,dest_path=excluded.dest_path,
-            source_size=excluded.source_size,dest_size=excluded.dest_size,bytes_saved=excluded.bytes_saved,
-            percent_saved=excluded.percent_saved,source_codec=excluded.source_codec,dest_codec=excluded.dest_codec,
-            source_profile=excluded.source_profile,dest_profile=excluded.dest_profile,
-            source_width=excluded.source_width,source_height=excluded.source_height,
-            dest_width=excluded.dest_width,dest_height=excluded.dest_height,
-            source_pix_fmt=excluded.source_pix_fmt,dest_pix_fmt=excluded.dest_pix_fmt,
-            source_audio=excluded.source_audio,dest_audio=excluded.dest_audio
-        """, values)
+        conn.execute(sql, [values[col] for col in columns])
         conn.execute("DELETE FROM pending WHERE task_key=?", (key,))
 
 
