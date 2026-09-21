@@ -1497,6 +1497,7 @@ def _start_sample_test(arguments):
 
         job_id = "{}-{}".format(metric_id, uuid.uuid4().hex[:10])
         record = plan.get("record") or {}
+        setting_obj = _library_settings(record.get("library_id"))
         job = {
             "id": job_id,
             "metric_id": metric_id,
@@ -1509,7 +1510,7 @@ def _start_sample_test(arguments):
             "total": (plan.get("plan") or {}).get("encode_variants") or 0,
             "completed": 0,
             "current": None,
-            "keep_files": bool(settings.get_setting("keep_sample_files")),
+            "keep_files": bool(setting_obj.get_setting("keep_sample_files")),
             "error": None,
             "result": None,
         }
