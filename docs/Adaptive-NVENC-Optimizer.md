@@ -227,3 +227,13 @@ Calibration Review is now opened from a dedicated button in the Adaptive page he
 The review uses a browser-safe custom modal overlay rather than relying on chained HTML `<dialog>` transitions. The modal contains the retained-run list, blind Candidate A/B/C/D quality controls, individual clip downloads, revealed results after rating, and retained-file cleanup.
 
 Blind ZIP bundles are built as background jobs. While the bundle is assembled, the modal shows a progress bar with the number of files already added and the current archive entry. Once ready, the browser download begins automatically. The completed ZIP is cached for that retained run until its calibration files are cleaned up.
+
+## Unsuitable calibration sources
+
+If a source does not provide a confident subjective comparison, use **Discard as unsuitable source** in Calibration Review instead of guessing Candidate A/B/C/D ratings. A discarded run is excluded from learned subjective quality thresholds and future model training. Its sample-test history is retained so the system knows the run was intentionally rejected, while retained video clips and the cached ZIP are removed.
+
+Examples include material where the source itself makes compression differences unusually hard to judge, or where the reviewer would effectively be guessing rather than making a confident visual assessment.
+
+## Automatic calibration ZIP preparation
+
+For retained human-calibration runs, the blind ZIP now starts building automatically as soon as GPU candidate generation finishes. Calibration Review shows the archive state as pending, building, or ready, including a live file-count progress bar while it is being assembled. Older retained runs without a ZIP also start archive preparation when Calibration Review data is loaded. Clicking **Download ZIP** uses the prepared archive when it is ready rather than starting the build from scratch.
