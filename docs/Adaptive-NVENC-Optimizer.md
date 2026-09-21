@@ -99,7 +99,7 @@ Clicking an Encode Advisor row now builds a read-only plan containing:
 - an estimated NVENC test duration based on measured encode speed;
 - the planned objective quality metrics (XPSNR + SSIM).
 
-Historical rows often point to files that Unmanic has already replaced with their HEVC outputs. Those rows are useful for learning compression behavior but are **not safe sources for perceptual calibration**, because the original reference frames no longer exist. This source-availability check is why sample execution is not enabled yet.
+Historical rows often point to files that Unmanic has already replaced with their HEVC outputs. Those rows are useful for learning compression behavior but are **not safe sources for perceptual calibration**, because the original reference frames no longer exist. Testing confirmed both states in practice: some no-op/failed video jobs still leave the original H.264 source available, while successful H.264→HEVC jobs generally leave only the HEVC replacement. This source-availability check is why sample execution is not enabled yet.
 
 ## Adjustable advisor columns
 
@@ -108,3 +108,7 @@ Advisor column widths can be dragged directly from the header. Widths are stored
 ## Automatic decisions are not enabled yet
 
 Learning mode does not re-encode files, change QP, change the video-transcoder plugin, delete media or modify Metrics Plus history.
+
+## No-op video tasks
+
+A successful Unmanic task is not automatically a successful video transcode. Rows that finish with the source codec unchanged (for example H.264 → H.264 with zero or tiny size change) are now labeled **No video encode** and excluded from the adaptive training baseline. They may still be useful as calibration sources when the original file remains present.
