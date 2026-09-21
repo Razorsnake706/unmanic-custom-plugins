@@ -32,4 +32,4 @@ This lets an older version remain available even after the main repository moves
 
 ### File Size Metrics Plus
 
-Filterable completion analytics with before/after size, source/output codec, library, worker, date, success/failure, percent saved, detailed task inspection, CSV export, visual size comparisons, customizable columns, and import of the official File Size Metrics history database.
+Filterable completion analytics with before/after size, source/output codec, library, worker, date, success/failure, percent saved, detailed task inspection, CSV export, visual size comparisons, customizable columns, optional grouping of repeated video/audio processing passes, per-media processing history, and import of the official File Size Metrics history database.
