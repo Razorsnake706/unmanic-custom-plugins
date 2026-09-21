@@ -36,9 +36,9 @@ encode only if worthwhile
 
 The full encode remains GPU-first.
 
-## Current phase: Manual calibration testing
+## Current phase: Pre-encode reference capture + manual calibration
 
-The reference system has crossed the initial baseline threshold. The optimizer can now execute an **opt-in manual sample test** when the original source is still safely available. Full media files and normal Unmanic encoding settings are still not changed by this phase.
+Adaptive NVENC Optimizer now has a Worker Processing runner. When it is enabled in a GPU video library **before Transcode Video Files**, it captures small video-only reference clips from the untouched source and then lets the normal Unmanic pipeline continue. Manual calibration can later use those clips even though the full original has already been replaced.
 
 The optimizer reads successful NVENC records from File Size Metrics Plus and calculates telemetry completeness, storage reduction, observed QP, encode speed, output audio share, video bitrate change and candidate priority.
 
@@ -129,3 +129,23 @@ The plugin settings now include:
 With sample retention disabled, temporary clips are removed after their objective scores are saved. With retention enabled, the clips and a `result.json` remain in the plugin userdata sample directory for manual inspection.
 
 Only one sample-test job is allowed at a time. For the cleanest timing measurements, avoid deliberately starting one while the normal Unmanic video worker is already saturating the same GPU.
+
+## Pre-encode reference capture
+
+Enable Adaptive NVENC Optimizer in the same GPU video libraries as the normal video transcoder and place it **before Transcode Video Files** in the Worker Processing flow.
+
+The capture step does not transcode the episode. It stream-copies short video-only sections from the original into the plugin userdata area, so the reference keeps the exact source-compressed frames without creating another lossy generation. Audio/subtitles are not copied because objective video calibration does not need them.
+
+Default capture settings:
+
+- Capture pre-encode reference clips: ON
+- Reference clips per file: 4
+- TV/short-form duration: 30 seconds
+- Movie/long-form duration: 45 seconds
+- Untested reference retention: 72 hours
+- Reference cache soft cap: 10 GB
+- Keep calibration/test sample files: OFF
+
+If reference capture fails for any reason, Adaptive logs the problem and returns control to Unmanic. The normal video task is never intentionally failed just because calibration data could not be captured.
+
+After a successful manual calibration with retention OFF, both the temporary QP test clips and the consumed pre-encode reference clips are removed. The XPSNR/SSIM result remains stored in `adaptive_optimizer.db`.
