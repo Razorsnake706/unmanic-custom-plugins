@@ -300,7 +300,7 @@ async function load(showNotice){
     $('qp').textContent=s.median_qp===null||s.median_qp===undefined?'—':Number(s.median_qp).toFixed(0);
     $('speed').textContent=s.average_speed?Number(s.average_speed).toFixed(1)+'×':'—';
     $('readiness').textContent=s.readiness||'—';
-    $('feedStatus').textContent='Latest NVENC record: '+dateTime(s.latest_finish_time)+' · '+Number(s.nvenc_records||0).toLocaleString()+' successful NVENC records · '+Number(s.reference_ready||0).toLocaleString()+' pre-encode reference captures ready';
+    $('feedStatus').textContent='Latest NVENC record: '+dateTime(s.latest_finish_time)+' · '+Number(s.nvenc_records||0).toLocaleString()+' successful NVENC records · '+Number(s.reference_ready||0).toLocaleString()+' pre-encode references · '+Number(s.review_ready||0).toLocaleString()+' reviews ready';
     $('refreshStamp').textContent='Refreshed '+new Date().toLocaleTimeString();
     if(showNotice)notice('Adaptive data refreshed. Latest NVENC record: '+dateTime(s.latest_finish_time)+'.');
     const target=Number(s.minimum_training_records||10),complete=Number(s.complete_records||0);
@@ -311,7 +311,10 @@ async function load(showNotice){
 
     const items=d.candidates||[];
     $('rows').innerHTML=items.length?items.map(x=>'<tr data-id="'+esc(x.id)+'" title="Click to build sample-test plan">'+
-      '<td class="file">'+esc(x.file_name||'Unknown')+'<div class="sub">'+esc(x.library_name||'')+'</div>'+(x.reference_ready?'<span class="ref-badge">REFERENCE READY · '+esc(x.reference_clip_count||0)+' CLIPS</span>':'')+'</td>'+
+      '<td class="file">'+esc(x.file_name||'Unknown')+'<div class="sub">'+esc(x.library_name||'')+'</div>'+
+        (x.reference_ready?'<span class="ref-badge">REFERENCE READY · '+esc(x.reference_clip_count||0)+' CLIPS</span>':'')+
+        (x.review_ready?'<div><button class="btn row-review-btn" data-row-review="'+esc(x.review_id)+'">Calibration Review'+(x.review_completed?' ✓':'')+'</button></div>':'')+
+      '</td>'+
       '<td class="status '+statusClass(x.diagnosis)+'">'+esc(x.diagnosis)+'</td>'+
       '<td>'+pct(x.percent_saved)+'<div class="sub">'+bytes(x.source_size)+' → '+bytes(x.dest_size)+'</div></td>'+
       '<td>'+bitrate(x.source_video_bitrate)+' → '+bitrate(x.dest_video_bitrate)+'</td>'+
@@ -324,6 +327,12 @@ async function load(showNotice){
       '<td class="reason">'+esc(x.reason||'')+'</td>'+
     '</tr>').join(''):'<tr><td colspan="11" class="empty">No NVENC records with adaptive metrics yet.</td></tr>';
     document.querySelectorAll('tbody tr[data-id]').forEach(function(tr){tr.onclick=function(){openSamplePlan(tr.dataset.id)}});
+    document.querySelectorAll('[data-row-review]').forEach(function(btn){
+      btn.onclick=function(e){
+        e.stopPropagation();
+        openCalibrationReview(btn.dataset.rowReview)
+      }
+    });
   }catch(e){
     $('feedStatus').textContent='Refresh failed: '+e.message;
     notice('Unable to load advisor data: '+e.message)
@@ -492,13 +501,58 @@ function calibrationFileUrl(runId,kind,sampleIndex,label){
   return base()+'calibrationFile?'+params.toString()
 }
 
-function calibrationBundleUrl(runId){
-  return base()+'calibrationBundle?'+new URLSearchParams({run_id:runId,_:String(Date.now())}).toString()
+function startCalibrationBundleUrl(runId){
+  return base()+'startCalibrationBundle?'+new URLSearchParams({run_id:runId,_:String(Date.now())}).toString()
+}
+function calibrationBundleStatusUrl(jobId){
+  return base()+'calibrationBundleStatus?'+new URLSearchParams({job_id:jobId,_:String(Date.now())}).toString()
+}
+function calibrationBundleFileUrl(jobId){
+  return base()+'calibrationBundleFile?'+new URLSearchParams({job_id:jobId,_:String(Date.now())}).toString()
 }
 
-async function downloadCalibrationBlob(url,filename){
+function setBundleProgress(show,text,percent,current){
+  $('bundleProgress').classList.toggle('show',!!show);
+  $('bundleProgressText').textContent=text||'';
+  $('bundleProgressBar').style.width=Math.max(0,Math.min(100,Number(percent)||0))+'%';
+  $('bundleProgressCurrent').textContent=current||''
+}
+
+async function buildAndDownloadCalibrationBundle(runId,filename){
   try{
-    notice('Preparing download…');
+    setBundleProgress(true,'Starting ZIP build…',0,'');
+    const start=await fetch(startCalibrationBundleUrl(runId),{cache:'no-store'});
+    const started=await start.json();
+    if(!start.ok||!started.success)throw new Error(started.message||'Unable to start ZIP build');
+    const jobId=started.job&&started.job.id;
+    if(!jobId)throw new Error('ZIP build did not return a job ID.');
+
+    let job=started.job;
+    while(job.status!=='ready'){
+      if(job.status==='failed')throw new Error(job.error||'ZIP build failed');
+      const total=Number(job.total||0),done=Number(job.completed||0);
+      const percent=total?done/total*100:2;
+      setBundleProgress(true,'Building ZIP… '+done+' / '+total+' files',percent,job.current||'');
+      await new Promise(function(resolve){setTimeout(resolve,500)});
+      const sr=await fetch(calibrationBundleStatusUrl(jobId),{cache:'no-store'});
+      const sd=await sr.json();
+      if(!sr.ok||!sd.success)throw new Error(sd.message||'Unable to read ZIP progress');
+      job=sd.job||{}
+    }
+
+    setBundleProgress(true,'ZIP ready · starting download…',100,job.bytes?bytes(job.bytes):'');
+    await downloadCalibrationBlob(calibrationBundleFileUrl(jobId),filename,true);
+    setBundleProgress(true,'Download started',100,job.bytes?bytes(job.bytes):'');
+    setTimeout(function(){setBundleProgress(false,'',0,'')},3000)
+  }catch(e){
+    setBundleProgress(true,'ZIP build failed',0,e.message||String(e));
+    notice('Unable to download calibration ZIP: '+(e.message||e))
+  }
+}
+
+async function downloadCalibrationBlob(url,filename,silent){
+  try{
+    if(!silent)notice('Preparing download…');
     const r=await fetch(url,{cache:'no-store'});
     if(!r.ok)throw new Error('Download request failed ('+r.status+')');
     const type=(r.headers.get('content-type')||'').toLowerCase();
@@ -573,6 +627,7 @@ async function loadCalibrationRuns(showNotice){
     calibrationRuns=d.runs||[];
     const s=d.summary||{};
     $('reviewRunCount').textContent=Number(s.retained_runs||0).toLocaleString();
+    $('topReviewCount').textContent=Number(s.retained_runs||0).toLocaleString();
     $('reviewCompleteCount').textContent=Number(s.completed_runs||0).toLocaleString();
     $('reviewAcceptedCount').textContent=Number(s.accepted||0).toLocaleString();
     $('reviewRejectedCount').textContent=Number(s.unacceptable||0).toLocaleString();
@@ -598,7 +653,8 @@ async function loadCalibrationRuns(showNotice){
       });
       document.querySelectorAll('[data-download-bundle]').forEach(function(btn){
         btn.onclick=function(){
-          downloadCalibrationBlob(calibrationBundleUrl(btn.dataset.downloadBundle),btn.dataset.filename)
+          showCalibrationHome();
+          buildAndDownloadCalibrationBundle(btn.dataset.downloadBundle,btn.dataset.filename)
         }
       })
     }
@@ -608,7 +664,7 @@ async function loadCalibrationRuns(showNotice){
       qualityPollTimer=setTimeout(async function(){
         const openId=currentReviewRun&&currentReviewRun.id;
         await loadCalibrationRuns(false);
-        if(openId&&$('reviewDialog').style.display!=='none'){
+        if(openId&&$('reviewOverlay').classList.contains('show')){
           const refreshed=findReviewRun(openId);
           if(refreshed)renderReviewRun(refreshed)
         }
@@ -690,17 +746,41 @@ function renderReviewRun(run){
   }
 }
 
-function openCalibrationReview(runId){
-  const run=findReviewRun(runId);
+function showReviewOverlay(){
+  $('reviewOverlay').classList.add('show');
+}
+function hideReviewOverlay(){
+  $('reviewOverlay').classList.remove('show');
+  currentReviewRun=null;
+  setBundleProgress(false,'',0,'')
+}
+function showCalibrationHome(){
+  $('reviewHome').classList.remove('hidden');
+  $('reviewDetail').classList.remove('show');
+  currentReviewRun=null
+}
+async function openCalibrationHub(){
+  showReviewOverlay();
+  showCalibrationHome();
+  $('reviewRuns').innerHTML='<span class="muted">Loading retained calibration runs…</span>';
+  await loadCalibrationRuns(false)
+}
+async function openCalibrationReview(runId){
+  showReviewOverlay();
+  let run=findReviewRun(runId);
   if(!run){
+    $('reviewRuns').innerHTML='<span class="muted">Loading retained calibration run…</span>';
+    await loadCalibrationRuns(false);
+    run=findReviewRun(runId)
+  }
+  if(!run){
+    showCalibrationHome();
     notice('Calibration run could not be found.');
     return
   }
-  renderReviewRun(run);
-  $('reviewDialog').style.display='block';
-  setTimeout(function(){
-    $('reviewDialog').scrollIntoView({behavior:'smooth',block:'start'})
-  },50)
+  $('reviewHome').classList.add('hidden');
+  $('reviewDetail').classList.add('show');
+  renderReviewRun(run)
 }
 
 async function saveCalibrationRating(runId,label,rating){
@@ -728,8 +808,7 @@ async function deleteCurrentReviewFiles(){
     const r=await fetch(base()+'deleteCalibrationFiles?'+params.toString(),{cache:'no-store'});
     const d=await r.json();
     if(!d.success)throw new Error(d.message||'Unable to delete retained files');
-    $('reviewDialog').style.display='none';
-    currentReviewRun=null;
+    hideReviewOverlay();
     await loadCalibrationRuns(false);
     notice('Retained calibration files deleted. Ratings and objective results were kept.')
   }catch(e){
@@ -807,42 +886,30 @@ $('advisorSort').value=advisorSort;
 $('advisorSort').onchange=function(){advisorSort=this.value;localStorage.setItem(SORT_KEY,advisorSort);load(false)};
 $('refresh').onclick=function(){load(true);loadCalibrationRuns(false)};
 $('refreshReviews').onclick=function(){loadCalibrationRuns(true)};
-$('openExistingReview').onclick=async function(){
+$('openExistingReview').onclick=function(){
   const runId=this.dataset.run;
   if(!runId)return;
-  await loadCalibrationRuns(false);
-  const run=findReviewRun(runId);
-  if(run){
-    $('planDialog').close();
-    setTimeout(function(){openCalibrationReview(runId)},50)
-  }else{
-    notice('The retained calibration run could not be loaded. Refresh Calibration Review and try again.')
-  }
+  $('planDialog').close();
+  setTimeout(function(){openCalibrationReview(runId)},80)
 };
-$('reviewSampleRun').onclick=async function(){
+$('reviewSampleRun').onclick=function(){
   const runId=this.dataset.run;
   if(!runId)return;
-  await loadCalibrationRuns(false);
-  const run=findReviewRun(runId);
-  if(run){
-    $('planDialog').close();
-    setTimeout(function(){openCalibrationReview(runId)},50)
-  }else{
-    notice('The retained run is not available in Calibration Review yet. Refresh reviews and try again.')
-  }
+  $('planDialog').close();
+  setTimeout(function(){openCalibrationReview(runId)},80)
 };
 $('updatePlugin').onclick=updatePlugin;
 $('runSampleTest').onclick=startSampleTest;
 $('closePlan').onclick=function(){$('planDialog').close()};
 $('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
-$('closeReview').onclick=function(){
-  $('reviewDialog').style.display='none';
-  currentReviewRun=null
-};
+$('openCalibrationHub').onclick=openCalibrationHub;
+$('closeReview').onclick=hideReviewOverlay;
+$('reviewBack').onclick=function(){showCalibrationHome()};
+$('reviewOverlay').onclick=function(e){if(e.target===$('reviewOverlay'))hideReviewOverlay()};
 $('downloadReviewBundle').onclick=function(){
   if(!currentReviewRun)return;
   const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
-  downloadCalibrationBlob(calibrationBundleUrl(currentReviewRun.id),safe+' - blind calibration clips.zip')
+  buildAndDownloadCalibrationBundle(currentReviewRun.id,safe+' - blind calibration clips.zip')
 };
 $('deleteReviewFiles').onclick=deleteCurrentReviewFiles;
 loadColumnWidths();
