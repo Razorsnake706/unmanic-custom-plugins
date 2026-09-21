@@ -55,7 +55,7 @@ class Settings(PluginSettings):
             },
             "keep_sample_files": {
                 "label": "Keep calibration/test sample files",
-                "description": "Off by default. Enable only when you want to manually inspect retained HEVC sample files after a test.",
+                "description": "Off by default. Enable during human calibration to retain both source-reference clips and QP candidate clips for blind visual review.",
             },
             "sample_count": {
                 "label": "Representative samples per file",
