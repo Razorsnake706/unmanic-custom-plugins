@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Validation release for the repaired **Update plugin** button.
+- No metrics collection or analysis behavior changed from 0.1.12.
+- Updated the panel version marker so a successful in-page self-update is easy to verify.
+
 ## 0.1.12
 
 - Fixed direct self-update again by using the same installed-plugin update route that Unmanic's normal Plugins page uses.
