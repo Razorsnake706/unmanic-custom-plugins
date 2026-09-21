@@ -1244,14 +1244,19 @@ def _sample_test_worker(job_id, metric_id):
     global _sample_active_job
 
     job_dir = None
+    capture_used = None
+    test_completed = False
     try:
         plan_data = _sample_plan({"id": metric_id})
         if not plan_data.get("success"):
             raise RuntimeError(plan_data.get("message") or "Unable to build sample plan.")
         plan = plan_data.get("plan") or {}
         check = plan_data.get("source_check") or {}
-        if not plan.get("can_execute_safely") or not check.get("original_available"):
-            raise RuntimeError("The original source is not safely available for a perceptual sample test.")
+        if not plan.get("can_execute_safely"):
+            raise RuntimeError(
+                check.get("message")
+                or "No original or captured reference is safely available for a perceptual sample test."
+            )
 
         conn = _metrics_db()
         if conn is None:
@@ -1264,12 +1269,47 @@ def _sample_test_worker(job_id, metric_id):
         finally:
             conn.close()
 
-        source_path = check.get("path")
-        keep_files = bool(settings.get_setting("keep_sample_files"))
-        starts = list(plan.get("sample_starts") or [])
+        setting_obj = _library_settings(row.get("library_id"))
+        keep_files = bool(setting_obj.get_setting("keep_sample_files"))
         qps = list(plan.get("qp_values") or [])
-        sample_length = _int(plan.get("sample_length")) or 30
-        total = len(starts) * len(qps)
+        nominal_sample_length = _float(plan.get("sample_length")) or 30.0
+
+        reference_capture_id = plan.get("reference_capture_id")
+        if reference_capture_id:
+            capture_used = _reference_capture_by_id(reference_capture_id)
+            if not capture_used:
+                raise RuntimeError("The pre-encode reference capture is no longer available.")
+            clips = (capture_used.get("manifest") or {}).get("clips") or []
+            work_items = []
+            for clip in clips:
+                ref_path = clip.get("path")
+                if not ref_path or not os.path.isfile(ref_path):
+                    continue
+                clip_length = _float(clip.get("duration")) or nominal_sample_length
+                work_items.append({
+                    "sample_index": _int(clip.get("index")) or len(work_items) + 1,
+                    "display_start": _float(clip.get("requested_start")) or 0.0,
+                    "source_path": ref_path,
+                    "encode_start": 0.0,
+                    "length": clip_length,
+                    "reference_file": clip.get("file_name") or os.path.basename(ref_path),
+                })
+        else:
+            source_path = check.get("path")
+            if not check.get("original_available") or not source_path or not os.path.isfile(source_path):
+                raise RuntimeError("The original source is no longer safely available.")
+            work_items = []
+            for index, start in enumerate(list(plan.get("sample_starts") or []), 1):
+                work_items.append({
+                    "sample_index": index,
+                    "display_start": _float(start) or 0.0,
+                    "source_path": source_path,
+                    "encode_start": _float(start) or 0.0,
+                    "length": nominal_sample_length,
+                    "reference_file": None,
+                })
+
+        total = len(work_items) * len(qps)
         if not total:
             raise RuntimeError("The sample plan did not contain any test variants.")
 
@@ -1284,11 +1324,18 @@ def _sample_test_worker(job_id, metric_id):
             completed=0,
             keep_files=keep_files,
             sample_directory=job_dir if keep_files else None,
+            reference_capture_id=reference_capture_id,
         )
 
         samples = []
         completed = 0
-        for sample_index, start in enumerate(starts, 1):
+        for item in work_items:
+            sample_index = item["sample_index"]
+            test_source = item["source_path"]
+            encode_start = item["encode_start"]
+            display_start = item["display_start"]
+            test_length = item["length"]
+
             for qp in qps:
                 filename = "sample_{:02d}_qp{}.mkv".format(sample_index, qp)
                 output_path = os.path.join(job_dir, filename)
@@ -1299,7 +1346,7 @@ def _sample_test_worker(job_id, metric_id):
                 )
 
                 encoded = _run_sample_encode(
-                    row, source_path, start, sample_length, qp, output_path
+                    row, test_source, encode_start, test_length, qp, output_path
                 )
                 if not encoded.get("success"):
                     raise RuntimeError(
@@ -1307,21 +1354,22 @@ def _sample_test_worker(job_id, metric_id):
                     )
 
                 file_bytes = os.path.getsize(output_path)
-                video_bitrate = (file_bytes * 8.0) / float(sample_length)
+                video_bitrate = (file_bytes * 8.0) / float(test_length)
 
                 xpsnr = _run_quality_metric(
-                    source_path, output_path, start, sample_length, "xpsnr"
+                    test_source, output_path, encode_start, test_length, "xpsnr"
                 )
                 ssim = _run_quality_metric(
-                    source_path, output_path, start, sample_length, "ssim"
+                    test_source, output_path, encode_start, test_length, "ssim"
                 )
 
                 samples.append({
                     "sample_index": sample_index,
-                    "start": start,
-                    "length": sample_length,
+                    "start": display_start,
+                    "length": test_length,
                     "qp": qp,
                     "file": filename if keep_files else None,
+                    "reference_file": item.get("reference_file") if keep_files else None,
                     "bytes": file_bytes,
                     "video_bitrate": video_bitrate,
                     "encode_seconds": encoded.get("elapsed"),
@@ -1335,14 +1383,22 @@ def _sample_test_worker(job_id, metric_id):
                 completed += 1
                 _job_update(job_id, completed=completed, current=None)
 
-        qp_summary = _aggregate_qp_results(samples, sample_length)
-        quality_complete = sum(1 for r in samples if r.get("xpsnr") is not None and r.get("ssim") is not None)
+        qp_summary = _aggregate_qp_results(samples, nominal_sample_length)
+        quality_complete = sum(
+            1 for result in samples
+            if result.get("xpsnr") is not None and result.get("ssim") is not None
+        )
 
         result = {
             "metric_id": metric_id,
-            "source_path": source_path,
-            "sample_length": sample_length,
-            "sample_starts": starts,
+            "source_path": check.get("path"),
+            "reference_mode": "captured_preencode" if capture_used else "live_original",
+            "reference_capture_id": capture_used.get("id") if capture_used else None,
+            "reference_directory": (
+                capture_used.get("directory") if capture_used and keep_files else None
+            ),
+            "sample_length": nominal_sample_length,
+            "sample_starts": [item.get("display_start") for item in work_items],
             "qp_values": qps,
             "quality_metrics": ["xpsnr", "ssim"],
             "quality_complete": quality_complete,
@@ -1367,6 +1423,7 @@ def _sample_test_worker(job_id, metric_id):
             completed=total,
             current=None,
         )
+        test_completed = True
     except Exception as exc:
         logger.exception("Adaptive manual sample test failed")
         _job_update(
@@ -1381,13 +1438,33 @@ def _sample_test_worker(job_id, metric_id):
         with _sample_job_lock:
             snapshot = dict(_sample_jobs.get(job_id) or {})
             _sample_active_job = None
+
         _persist_sample_run(snapshot)
+
         keep = bool(snapshot.get("keep_files"))
         if job_dir and not keep:
             try:
                 shutil.rmtree(job_dir)
             except Exception:
                 logger.exception("Unable to remove temporary adaptive sample directory")
+
+        if capture_used and test_completed:
+            if keep:
+                try:
+                    with _optimizer_db() as conn:
+                        conn.execute(
+                            """
+                            UPDATE reference_captures
+                            SET status='retained', expires=NULL, keep_files=1
+                            WHERE id=?
+                            """,
+                            (capture_used.get("id"),),
+                        )
+                except Exception:
+                    logger.exception("Unable to retain tested reference capture")
+            else:
+                _remove_reference_capture(capture_used, status="consumed")
+
 
 
 def _start_sample_test(arguments):
