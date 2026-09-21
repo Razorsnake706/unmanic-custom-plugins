@@ -123,7 +123,7 @@ def _optimizer_db():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute(
+    conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS sample_runs (
             id TEXT PRIMARY KEY,
@@ -136,7 +136,33 @@ def _optimizer_db():
             keep_files INTEGER,
             error TEXT,
             result_json TEXT
-        )
+        );
+
+        CREATE TABLE IF NOT EXISTS reference_captures (
+            id TEXT PRIMARY KEY,
+            task_id INTEGER,
+            library_id INTEGER,
+            source_path TEXT,
+            file_name TEXT,
+            source_codec TEXT,
+            source_size INTEGER,
+            created REAL,
+            expires REAL,
+            sample_length REAL,
+            sample_count INTEGER,
+            directory TEXT,
+            status TEXT,
+            keep_files INTEGER,
+            manifest_json TEXT,
+            error TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reference_task
+            ON reference_captures(task_id);
+        CREATE INDEX IF NOT EXISTS idx_reference_path
+            ON reference_captures(source_path);
+        CREATE INDEX IF NOT EXISTS idx_reference_status
+            ON reference_captures(status, created);
         """
     )
     return conn
@@ -146,6 +172,197 @@ def _sample_root():
     path = os.path.join(_optimizer_profile(), "samples")
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _reference_root():
+    path = os.path.join(_optimizer_profile(), "reference-captures")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _library_settings(library_id=None):
+    try:
+        return Settings(library_id=library_id) if library_id else Settings()
+    except Exception:
+        logger.exception("Unable to load adaptive settings for library %s", library_id)
+        return settings
+
+
+def _sampling_values(setting_obj, duration):
+    sample_count = max(1, min(8, _int(setting_obj.get_setting("sample_count")) or 4))
+    short_length = max(10, min(120, _int(setting_obj.get_setting("tv_sample_seconds")) or 30))
+    long_length = max(10, min(180, _int(setting_obj.get_setting("movie_sample_seconds")) or 45))
+    sample_length = long_length if duration and duration >= 3600 else short_length
+    return sample_count, sample_length
+
+
+def _append_worker_log(worker_log, message):
+    try:
+        if worker_log is not None:
+            worker_log.append("\n[Adaptive NVENC Optimizer] {}".format(message))
+    except Exception:
+        pass
+
+
+def _directory_size(path):
+    total = 0
+    if not path or not os.path.isdir(path):
+        return 0
+    for root, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
+def _capture_manifest(row):
+    try:
+        return json.loads(row.get("manifest_json") or "{}")
+    except Exception:
+        return {}
+
+
+def _capture_files_valid(capture):
+    manifest = capture.get("manifest") or {}
+    clips = manifest.get("clips") or []
+    if not clips:
+        return False
+    return all(os.path.isfile(clip.get("path") or "") for clip in clips)
+
+
+def _capture_record(row):
+    if row is None:
+        return None
+    capture = dict(row)
+    capture["manifest"] = _capture_manifest(capture)
+    capture["available"] = _capture_files_valid(capture)
+    capture["bytes"] = _directory_size(capture.get("directory"))
+    return capture
+
+
+def _reference_capture_for_metrics_row(metrics_row):
+    r = dict(metrics_row)
+    task_id = _int(r.get("task_id"))
+    source_path = r.get("source_path")
+    with _optimizer_db() as conn:
+        row = None
+        if task_id is not None:
+            row = conn.execute(
+                """
+                SELECT * FROM reference_captures
+                WHERE task_id=? AND status IN ('ready','retained','tested')
+                ORDER BY created DESC LIMIT 1
+                """,
+                (task_id,),
+            ).fetchone()
+        if row is None and source_path:
+            row = conn.execute(
+                """
+                SELECT * FROM reference_captures
+                WHERE source_path=? AND status IN ('ready','retained','tested')
+                ORDER BY created DESC LIMIT 1
+                """,
+                (source_path,),
+            ).fetchone()
+    capture = _capture_record(row)
+    if capture and not capture.get("available"):
+        try:
+            with _optimizer_db() as conn:
+                conn.execute(
+                    "UPDATE reference_captures SET status='missing', error=? WHERE id=?",
+                    ("Reference files are no longer present.", capture.get("id")),
+                )
+        except Exception:
+            logger.exception("Unable to mark missing reference capture")
+        return None
+    return capture
+
+
+def _reference_capture_by_id(capture_id):
+    if not capture_id:
+        return None
+    with _optimizer_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM reference_captures WHERE id=?",
+            (str(capture_id),),
+        ).fetchone()
+    capture = _capture_record(row)
+    return capture if capture and capture.get("available") else None
+
+
+def _remove_reference_capture(capture, status="consumed"):
+    if not capture:
+        return
+    directory = capture.get("directory")
+    try:
+        if directory and os.path.isdir(directory):
+            shutil.rmtree(directory)
+    except Exception:
+        logger.exception("Unable to remove reference capture directory %s", directory)
+        return
+    try:
+        with _optimizer_db() as conn:
+            conn.execute(
+                "UPDATE reference_captures SET status=?, error=NULL WHERE id=?",
+                (status, capture.get("id")),
+            )
+    except Exception:
+        logger.exception("Unable to update reference capture status")
+
+
+def _cleanup_reference_captures(setting_obj=None):
+    setting_obj = setting_obj or settings
+    now = time.time()
+    try:
+        max_gb = max(1.0, _float(setting_obj.get_setting("reference_cache_gb")) or 10.0)
+    except Exception:
+        max_gb = 10.0
+    max_bytes = int(max_gb * (1024 ** 3))
+
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM reference_captures
+            WHERE status IN ('ready','tested','retained')
+            ORDER BY created ASC
+            """
+        ).fetchall()
+
+    captures = [_capture_record(row) for row in rows]
+    for capture in captures:
+        if not capture:
+            continue
+        expires = _float(capture.get("expires"))
+        if (
+            not capture.get("keep_files")
+            and expires is not None
+            and expires <= now
+        ):
+            _remove_reference_capture(capture, status="expired")
+
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM reference_captures
+            WHERE status IN ('ready','tested','retained')
+            ORDER BY created ASC
+            """
+        ).fetchall()
+    captures = [_capture_record(row) for row in rows]
+    total = sum(capture.get("bytes") or 0 for capture in captures if capture)
+    if total <= max_bytes:
+        return
+
+    for capture in captures:
+        if not capture or capture.get("keep_files"):
+            continue
+        size = capture.get("bytes") or 0
+        _remove_reference_capture(capture, status="cache_evicted")
+        total -= size
+        if total <= max_bytes:
+            break
 
 
 def _metrics_db_path():
