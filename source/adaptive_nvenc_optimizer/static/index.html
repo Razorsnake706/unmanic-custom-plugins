@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.5.0</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.5.1</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -114,9 +114,19 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <dialog id="reviewDialog"><div class="dialog">
   <h3 id="reviewTitle">Calibration Review</h3>
   <div id="reviewSubtitle" class="sub"></div>
-  <div class="warning" style="margin-top:12px"><strong>Blind review:</strong> Candidates are labeled A/B/C/D. Their QP values and XPSNR/SSIM scores remain hidden until all candidates are rated. Compare each candidate against the reference across all sample positions before choosing an overall rating.</div>
-  <div id="reviewSamples" style="margin-top:12px"></div>
-  <div id="reviewCandidates" style="margin-top:14px"></div>
+  <div class="warning" style="margin-top:12px"><strong>Blind review:</strong> Candidates are labeled A/B/C/D. Their QP values and XPSNR/SSIM scores remain hidden until all candidates are rated.</div>
+  <div class="section" style="margin-top:12px">
+    <h2>1. Judge candidate quality</h2>
+    <div class="sub">Watch each candidate against the reference across all sample positions, then choose one overall rating for that candidate.</div>
+    <div id="reviewCandidates" style="margin-top:10px"></div>
+  </div>
+  <div class="section" style="margin-top:12px">
+    <div class="actions" style="justify-content:space-between">
+      <div><h2>2. Watch the clips</h2><div class="sub">Download clips individually, or download one ZIP containing every blind reference/candidate clip.</div></div>
+      <button id="downloadReviewBundle" class="btn primary">Download all clips (.zip)</button>
+    </div>
+    <div id="reviewSamples" style="margin-top:10px"></div>
+  </div>
   <div id="reviewReveal" class="reveal">
     <div class="section" style="margin-top:14px">
       <h2>Revealed results</h2>
@@ -138,6 +148,11 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
   <h3 id="planTitle">Sample-test plan</h3>
   <div id="planSubtitle" class="sub"></div>
   <div id="sourceCheck" style="margin:12px 0"></div>
+  <div id="existingReviewBox" class="successbox" style="display:none;margin-bottom:10px">
+    <strong>Retained calibration clips already exist for this file.</strong>
+    <div class="sub" style="margin-top:4px">You do not need to rerun the sample test after leaving this page.</div>
+    <div class="sample-actions"><button id="openExistingReview" class="btn primary">Open Calibration Review</button></div>
+  </div>
   <div id="planGrid" class="plan-grid"></div>
   <div class="section" style="margin-top:10px"><h2>Representative sample positions</h2><div id="sampleTimes" class="timeline"></div></div>
   <div class="section" style="margin-top:10px"><h2>QP ladder</h2><div id="qpValues" class="timeline"></div></div>
@@ -157,7 +172,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
   <div id="sampleResults" class="sample-results">
     <div id="sampleResultMessage" class="successbox"></div>
-    <div style="overflow:auto;margin-top:10px">
+    <div id="sampleResultTableWrap" style="overflow:auto;margin-top:10px">
       <table class="result-table">
         <thead><tr><th>QP</th><th>XPSNR</th><th>SSIM</th><th>Avg video bitrate</th><th>Relative bitrate</th><th>GPU encode time</th><th>Samples</th></tr></thead>
         <tbody id="sampleResultRows"></tbody>
@@ -169,7 +184,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.5.0';
+const PLUGIN_VERSION='0.5.1';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -327,14 +342,23 @@ async function openSamplePlan(id){
     $('qpValues').innerHTML=(plan.qp_values||[]).map(function(v){return'<span class="pill">QP '+esc(v)+'</span>'}).join('');
     currentPlan=d;
     currentPlanId=id;
-    $('runSampleTest').disabled=!plan.can_execute_safely;
-    $('runSampleTest').textContent=plan.can_execute_safely?'Run sample test':'Reference required';
+    const existingReview=d.existing_review||null;
+    const activeJob=d.active_job||null;
+    $('existingReviewBox').style.display=existingReview?'block':'none';
+    $('openExistingReview').dataset.run=existingReview?existingReview.id:'';
+    $('runSampleTest').disabled=!!existingReview||!!activeJob||!plan.can_execute_safely;
+    $('runSampleTest').textContent=existingReview?'Review existing clips':(activeJob?'Test already running':(plan.can_execute_safely?'Run sample test':'Reference required'));
     $('sampleSettingInfo').textContent='Keep sample files: '+(plan.keep_sample_files?'ON':'OFF')+' · '+(referenceAvailable?'This test will use source clips captured before the full transcode. ':'')+(plan.keep_sample_files?'Fast calibration is active: the P1000 candidates are generated first, then expensive XPSNR/SSIM scoring waits until your blind review identifies the useful quality boundary.':'Objective scores are calculated immediately and temporary encoded clips are deleted afterward.');
     $('sampleProgress').classList.remove('show');
     $('sampleResults').classList.remove('show');
     $('sampleResultRows').innerHTML='';
     $('sampleResultMessage').textContent='';
-    $('planDialog').showModal()
+    $('planDialog').showModal();
+    if(activeJob&&activeJob.id){
+      $('sampleProgress').classList.add('show');
+      $('sampleProgressText').textContent='Reconnected to running sample test…';
+      pollSampleTest(activeJob.id)
+    }
   }catch(e){notice('Unable to build sample plan: '+e.message)}
 }
 
@@ -350,8 +374,9 @@ function renderSampleResults(job){
   }
 
   const deferred=!!result.metrics_deferred;
+  $('sampleResultTableWrap').style.display=deferred?'none':'block';
   const baseline=Number(rows[0].video_bitrate||0);
-  $('sampleResultRows').innerHTML=rows.map(function(x){
+  $('sampleResultRows').innerHTML=deferred?'':rows.map(function(x){
     const br=Number(x.video_bitrate||0);
     const rel=baseline&&br?((br/baseline-1)*100):null;
     return '<tr>'+
@@ -451,6 +476,43 @@ function calibrationFileUrl(runId,kind,sampleIndex,label){
   return base()+'calibrationFile?'+params.toString()
 }
 
+function calibrationBundleUrl(runId){
+  return base()+'calibrationBundle?'+new URLSearchParams({run_id:runId,_:String(Date.now())}).toString()
+}
+
+async function downloadCalibrationBlob(url,filename){
+  try{
+    notice('Preparing download…');
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok)throw new Error('Download request failed ('+r.status+')');
+    const type=(r.headers.get('content-type')||'').toLowerCase();
+    if(type.includes('application/json')){
+      const d=await r.json();
+      throw new Error(d.message||'Calibration file is unavailable.')
+    }
+    const blob=await r.blob();
+    if(!blob.size)throw new Error('The downloaded file was empty.');
+    const objectUrl=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=objectUrl;
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){URL.revokeObjectURL(objectUrl)},30000)
+  }catch(e){
+    notice('Unable to download calibration clip: '+e.message)
+  }
+}
+
+function wireCalibrationDownloads(){
+  document.querySelectorAll('[data-cal-download]').forEach(function(btn){
+    btn.onclick=function(){
+      downloadCalibrationBlob(btn.dataset.url,btn.dataset.filename)
+    }
+  })
+}
+
 function ratingLabel(value){
   return ({
     indistinguishable:'Indistinguishable',
@@ -547,17 +609,20 @@ function renderReviewRun(run){
     const reference=calibrationFileUrl(run.id,'reference',sample.sample_index,'');
     const candidates=(sample.candidates||[]).map(function(item){
       const href=calibrationFileUrl(run.id,'candidate',sample.sample_index,item.label);
-      return '<a class="download-link" href="'+href+'" download="Sample '+esc(sample.sample_index)+' - Candidate '+esc(item.label)+'.mkv">Download Candidate '+esc(item.label)+'</a>'
+      const filename='Sample '+sample.sample_index+' - Candidate '+item.label+'.mkv';
+      return '<button class="download-link" data-cal-download="1" data-url="'+esc(href)+'" data-filename="'+esc(filename)+'">Download Candidate '+esc(item.label)+'</button>'
     }).join('');
+    const refName='Sample '+sample.sample_index+' - Reference.mkv';
     return '<div class="review-sample">'+
       '<strong>Sample '+esc(sample.sample_index)+'</strong>'+
       '<div class="sub">'+timecode(sample.start)+' · '+humanTime(sample.length)+'</div>'+
       '<div class="download-grid">'+
-        '<a class="download-link" href="'+reference+'" download="Sample '+esc(sample.sample_index)+' - Reference.mkv">Download Reference</a>'+
+        '<button class="download-link" data-cal-download="1" data-url="'+esc(reference)+'" data-filename="'+esc(refName)+'">Download Reference</button>'+
         candidates+
       '</div>'+
     '</div>'
   }).join('');
+  wireCalibrationDownloads();
 
   const ratings=run.ratings||{};
   $('reviewCandidates').innerHTML=(run.candidate_labels||[]).map(function(label){
@@ -566,8 +631,8 @@ function renderReviewRun(run){
       return '<button data-rating="'+value+'" class="'+(current===value?'active':'')+'">'+ratingLabel(value)+'</button>'
     }).join('');
     return '<div class="candidate-review" data-candidate="'+esc(label)+'">'+
-      '<strong>Candidate '+esc(label)+'</strong>'+
-      '<div class="review-note">Review this candidate across every sample position, then choose its overall quality relative to the reference.</div>'+
+      '<strong>Candidate '+esc(label)+(current?' · '+esc(ratingLabel(current)):' · Not rated')+'</strong>'+
+      '<div class="review-note">Choose one overall rating after comparing Candidate '+esc(label)+' with the Reference in all four sample positions.</div>'+
       '<div class="rating-buttons">'+buttons+'</div>'+
     '</div>'
   }).join('');
@@ -710,6 +775,18 @@ $('advisorSort').value=advisorSort;
 $('advisorSort').onchange=function(){advisorSort=this.value;localStorage.setItem(SORT_KEY,advisorSort);load(false)};
 $('refresh').onclick=function(){load(true);loadCalibrationRuns(false)};
 $('refreshReviews').onclick=function(){loadCalibrationRuns(true)};
+$('openExistingReview').onclick=async function(){
+  const runId=this.dataset.run;
+  if(!runId)return;
+  await loadCalibrationRuns(false);
+  const run=findReviewRun(runId);
+  if(run){
+    $('planDialog').close();
+    openCalibrationReview(runId)
+  }else{
+    notice('The retained calibration run could not be loaded. Refresh Calibration Review and try again.')
+  }
+};
 $('reviewSampleRun').onclick=async function(){
   const runId=this.dataset.run;
   if(!runId)return;
@@ -728,6 +805,11 @@ $('closePlan').onclick=function(){$('planDialog').close()};
 $('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
 $('closeReview').onclick=function(){$('reviewDialog').close()};
 $('reviewDialog').onclick=function(e){if(e.target===$('reviewDialog'))$('reviewDialog').close()};
+$('downloadReviewBundle').onclick=function(){
+  if(!currentReviewRun)return;
+  const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
+  downloadCalibrationBlob(calibrationBundleUrl(currentReviewRun.id),safe+' - blind calibration clips.zip')
+};
 $('deleteReviewFiles').onclick=deleteCurrentReviewFiles;
 loadColumnWidths();
 setupResizers();
