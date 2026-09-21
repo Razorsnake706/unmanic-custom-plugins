@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.11
+
+- Improved bitrate collection for MKV/Matroska streams where ffprobe does not populate `stream.bit_rate`.
+- Metrics Plus now reads common per-stream `BPS` tags and can estimate stream bitrate from `NUMBER_OF_BYTES` plus duration.
+- This improves aggregate audio bitrate and derived video-bitrate estimates for files with multiple copied audio tracks.
+- No encoding behavior changed.
+
 ## 0.1.10
 
 - Fixed the **Update plugin** button on current Unmanic builds.
