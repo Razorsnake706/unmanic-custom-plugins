@@ -742,6 +742,37 @@ def _matching_ids(arguments):
     }
 
 
+def _selection_summary(arguments):
+    raw = str(_arg(arguments, "ids", "")).strip()
+    ids = []
+    for value in raw.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        parsed = _num(value)
+        if parsed is not None and parsed > 0:
+            ids.append(parsed)
+
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return {
+            "success": True,
+            "summary": _summary_for_items([]),
+        }
+
+    placeholders = ",".join("?" for _ in ids)
+    with _db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM metrics WHERE id IN ({})".format(placeholders),
+            ids,
+        ).fetchall()]
+
+    return {
+        "success": True,
+        "summary": _summary_for_items(rows),
+    }
+
+
 def _delete_entries(arguments):
     raw = str(_arg(arguments, "ids", "")).strip()
     ids = []
@@ -893,6 +924,10 @@ def render_frontend_panel(data):
     if path == "matchingIds":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_matching_ids(args))
+        return data
+    if path == "selectionSummary":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_selection_summary(args))
         return data
     if path == "delete":
         data["content_type"] = "application/json"
