@@ -810,7 +810,7 @@ $('reviewSampleRun').onclick=async function(){
   const run=findReviewRun(runId);
   if(run){
     $('planDialog').close();
-    openCalibrationReview(runId)
+    setTimeout(function(){openCalibrationReview(runId)},50)
   }else{
     notice('The retained run is not available in Calibration Review yet. Refresh reviews and try again.')
   }
