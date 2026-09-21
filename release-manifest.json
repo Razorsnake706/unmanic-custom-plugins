@@ -1,0 +1,11 @@
+[
+  {
+    "plugin_id": "file_size_metrics_plus",
+    "name": "File Size Metrics Plus",
+    "version": "0.1.1",
+    "tag": "file_size_metrics_plus-v0.1.1",
+    "zip": "file_size_metrics_plus/file_size_metrics_plus-0.1.1.zip",
+    "changelog": "source/file_size_metrics_plus/changelog.md",
+    "pinned_repo": "https://raw.githubusercontent.com/Razorsnake706/unmanic-custom-plugins/repo/versions/file_size_metrics_plus/0.1.1/repo.json"
+  }
+]
