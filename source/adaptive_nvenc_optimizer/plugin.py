@@ -2200,6 +2200,47 @@ def _calibration_runs():
     }
 
 
+def _rate_all_calibration(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    rating = str(_arg(arguments, "rating", "") or "").strip().lower()
+
+    if not run_id or rating not in _CALIBRATION_RATINGS:
+        return {"success": False, "message": "Invalid calibration bulk-rating request."}
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return {"success": False, "message": "Calibration run was discarded as unsuitable."}
+
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    if not candidate_map:
+        return {"success": False, "message": "Calibration candidates were not found."}
+
+    now = time.time()
+    with _optimizer_db() as conn:
+        for label, qp in candidate_map.items():
+            conn.execute(
+                """
+                INSERT INTO calibration_ratings(
+                    run_id, candidate_label, qp, rating, created, updated
+                ) VALUES(?,?,?,?,?,?)
+                ON CONFLICT(run_id, candidate_label) DO UPDATE SET
+                    qp=excluded.qp,
+                    rating=excluded.rating,
+                    updated=excluded.updated
+                """,
+                (run_id, label, qp, rating, now, now),
+            )
+
+    quality = _schedule_deferred_quality(run_id)
+    refreshed = _load_sample_run(run_id)
+    payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {"success": True, "run": payload, "quality": quality}
+
+
 def _rate_calibration(arguments):
     run_id = str(_arg(arguments, "run_id", "") or "").strip()
     label = str(_arg(arguments, "label", "") or "").strip().upper()
@@ -3126,6 +3167,11 @@ def render_frontend_panel(data):
     if path == "calibrationRuns":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_calibration_runs(), default=str)
+        return data
+
+    if path == "rateAllCalibration":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_rate_all_calibration(args), default=str)
         return data
 
     if path == "rateCalibration":
