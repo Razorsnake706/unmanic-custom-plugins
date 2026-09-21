@@ -74,7 +74,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.13</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.14</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="updatePlugin" class="btn primary">Update plugin</button><button id="import" class="btn">Import official history</button><button id="export" class="btn">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -199,7 +199,7 @@ let latestOptions={libraries:[],codecs:[],workers:[]};
 let filteredSummary=null;
 let selectionSummaryTimer=null;
 let selectionSummarySequence=0;
-const PLUGIN_VERSION='0.1.13';
+const PLUGIN_VERSION='0.1.14';
 
 const humanBytes=v=>{
   if(v===null||v===undefined)return'—';
@@ -639,27 +639,10 @@ async function readJsonResponse(response){
 
 async function getInstalledPluginRecord(){
   try{
-    const r=await fetch('/api/v2/plugins/installed',{
-      method:'POST',
-      credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        start:0,
-        length:100,
-        search_value:'file_size_metrics_plus',
-        order_by:'name',
-        order_direction:'asc'
-      })
-    });
+    const r=await fetch(base()+'selfRecord?_='+Date.now(),{cache:'no-store'});
     const d=await readJsonResponse(r);
-    if(!r.ok||d.success===false)return null;
-
-    const candidates=[]
-      .concat(Array.isArray(d.results)?d.results:[])
-      .concat(d.result&&Array.isArray(d.result.results)?d.result.results:[])
-      .concat(d.data&&Array.isArray(d.data.results)?d.data.results:[]);
-
-    return candidates.find(function(x){return x&&x.plugin_id==='file_size_metrics_plus'})||null
+    if(!r.ok||!d.success)return null;
+    return d
   }catch(e){
     return null
   }
