@@ -109,6 +109,8 @@ def _diagnose(row):
     r = dict(row)
     source_total = _float(r.get("source_total_bitrate"))
     dest_total = _float(r.get("dest_total_bitrate"))
+    source_codec = str(r.get("source_codec") or "").lower()
+    dest_codec = str(r.get("dest_codec") or "").lower()
     source_audio = _float(r.get("source_audio_bitrate"))
     dest_audio = _float(r.get("dest_audio_bitrate"))
     source_video = _sane_video_bitrate(source_total, source_audio, r.get("source_video_bitrate"))
@@ -146,28 +148,41 @@ def _diagnose(row):
     reason = "This encode predates some of the diagnostic fields needed for a reliable recommendation."
     priority = 0.0
 
+    training_eligible = False
+
     if completeness >= 75:
-        if audio_share is not None and audio_share >= 45:
+        if dest_codec not in ("hevc", "h265"):
+            status = "No video encode"
+            reason = "The task completed without producing HEVC video, so it is excluded from the NVENC training baseline."
+            priority = 5.0
+        elif source_codec == dest_codec:
+            status = "Same-codec result"
+            reason = "The source and output codecs match; keep this row for diagnostics but exclude it from the H.264-to-HEVC training baseline."
+            priority = 10.0
+        else:
+            training_eligible = True
+
+        if training_eligible and audio_share is not None and audio_share >= 45:
             status = "Audio-limited"
             reason = "Video compressed substantially, but audio is now a large share of the final bitrate."
             priority = 35.0
-        elif saved_pct is not None and video_reduction is not None and saved_pct >= 45 and video_reduction >= 45:
+        elif training_eligible and saved_pct is not None and video_reduction is not None and saved_pct >= 45 and video_reduction >= 45:
             status = "Good compression"
             reason = "Both total file size and video bitrate dropped strongly at the current NVENC settings."
             priority = 10.0
-        elif source_bpppf is not None and source_bpppf <= 0.055:
+        elif training_eligible and source_bpppf is not None and source_bpppf <= 0.055:
             status = "Already efficient"
             reason = "The source video bitrate is already low for its resolution and frame rate."
             priority = 15.0
-        elif video_reduction is not None and video_reduction < 25:
+        elif training_eligible and video_reduction is not None and video_reduction < 25:
             status = "Sample-test candidate"
             reason = "The video bitrate did not fall much; a controlled QP sample test may find additional savings."
             priority = 80.0
-        elif saved_pct is not None and saved_pct < 25:
+        elif training_eligible and saved_pct is not None and saved_pct < 25:
             status = "Sample-test candidate"
             reason = "Overall storage savings were modest; the source is worth profiling before a full retry."
             priority = 70.0
-        else:
+        elif training_eligible:
             status = "Worth profiling"
             reason = "The encode is usable, but sample testing could determine whether a higher QP remains acceptable."
             priority = 50.0
@@ -215,6 +230,7 @@ def _diagnose(row):
         "reason": reason,
         "completeness": completeness,
         "priority": priority,
+        "training_eligible": training_eligible,
     }
 
 
@@ -394,7 +410,7 @@ def _overview(arguments):
         ).fetchall()
 
         analyzed = [_diagnose(row) for row in rows]
-        complete = [x for x in analyzed if x["completeness"] >= 75]
+        complete = [x for x in analyzed if x.get("training_eligible")]
         qps = [_float(x.get("encoder_quality")) for x in complete]
         reductions = [_float(x.get("percent_saved")) for x in complete]
         speeds = [_float(x.get("encode_speed")) for x in complete]
