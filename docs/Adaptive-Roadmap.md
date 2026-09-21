@@ -135,3 +135,7 @@ Human calibration uses a review-first workflow: generate retained GPU candidates
 ## Coarse-to-fine subjective search
 
 Calibration now begins with a wide QP ladder to locate a visible quality boundary rather than asking the reviewer to distinguish several nearly identical encodes. The next planned refinement is a second-stage ladder that narrows around the highest acceptable / first unacceptable QPs. Runs where every candidate is indistinguishable are retained as evidence that the boundary lies above the tested range and can drive a higher follow-up ladder.
+
+## Per-sample calibration evidence
+
+Subjective calibration now records ratings at `(run, sample position, candidate)` granularity. Current QP-boundary selection conservatively collapses those ratings to the worst reviewable sample per candidate, while the raw per-sample observations are preserved for future models that can learn how content type, scene difficulty, motion, darkness, texture, and objective metrics affect the user's visible-quality threshold.
