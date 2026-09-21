@@ -92,3 +92,7 @@ The generated repo branch also contains version directories, but GitHub Release 
 ## Documentation maintenance
 
 When architecture or the adaptive phase changes, update the README and the relevant docs pages. The goal is for source control, not chat history, to be sufficient to resume development later.
+
+## GitHub release notes
+
+The source `changelog.md` files keep full plugin history, but GitHub Releases include **only the section matching the version being released**. `build_repo.py` extracts that version section into a generated release-notes file, and the publish workflow uses that file for the release body.
