@@ -6,6 +6,7 @@ import math
 import os
 import sqlite3
 import statistics
+import subprocess
 import time
 
 import requests
@@ -214,6 +215,151 @@ def _diagnose(row):
     }
 
 
+
+def _current_media_identity(path):
+    if not path or not os.path.exists(path):
+        return {"exists": False}
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=size,duration:stream=codec_type,codec_name,width,height",
+        "-of", "json", path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+        if proc.returncode:
+            return {"exists": True, "probe_error": (proc.stderr or "").strip()[:500]}
+        payload = json.loads(proc.stdout or "{}")
+        streams = payload.get("streams") or []
+        video = next((s for s in streams if s.get("codec_type") == "video"), {})
+        fmt = payload.get("format") or {}
+        return {
+            "exists": True,
+            "codec": video.get("codec_name"),
+            "width": _int(video.get("width")),
+            "height": _int(video.get("height")),
+            "size": _int(fmt.get("size")),
+            "duration": _float(fmt.get("duration")),
+        }
+    except Exception as exc:
+        logger.exception("Unable to inspect current media path for adaptive planning")
+        return {"exists": True, "probe_error": str(exc)}
+
+
+def _sample_timestamps(duration, sample_length):
+    duration = _float(duration)
+    if not duration or duration <= sample_length + 20:
+        return []
+    positions = (0.10, 0.35, 0.60, 0.85)
+    starts = []
+    edge = min(60.0, max(10.0, duration * 0.03))
+    latest = max(edge, duration - sample_length - edge)
+    for pos in positions:
+        center = duration * pos
+        start = max(edge, min(latest, center - sample_length / 2.0))
+        rounded = round(start, 1)
+        if rounded not in starts:
+            starts.append(rounded)
+    return starts
+
+
+def _sample_plan(arguments):
+    metric_id = _int(_arg(arguments, "id", 0))
+    if not metric_id:
+        return {"success": False, "message": "A metrics record ID is required."}
+
+    conn = _metrics_db()
+    if conn is None:
+        return {"success": False, "message": "File Size Metrics Plus database was not found."}
+
+    try:
+        row = conn.execute("SELECT * FROM metrics WHERE id=?", (metric_id,)).fetchone()
+        if row is None:
+            return {"success": False, "message": "Metrics record was not found."}
+
+        diagnosed = _diagnose(row)
+        r = dict(row)
+        source_path = r.get("source_path")
+        identity = _current_media_identity(source_path)
+
+        stored_source_codec = str(r.get("source_codec") or "").lower()
+        current_codec = str(identity.get("codec") or "").lower()
+        stored_source_size = _float(r.get("source_size"))
+        current_size = _float(identity.get("size"))
+
+        codec_matches = bool(stored_source_codec and current_codec and stored_source_codec == current_codec)
+        size_ratio = (
+            current_size / stored_source_size
+            if current_size and stored_source_size else None
+        )
+        size_matches = bool(size_ratio is not None and 0.90 <= size_ratio <= 1.10)
+        original_available = bool(identity.get("exists") and codec_matches and size_matches)
+
+        if not identity.get("exists"):
+            source_state = "Source path is no longer present."
+        elif identity.get("probe_error"):
+            source_state = "Source path exists, but could not be probed safely."
+        elif original_available:
+            source_state = "The current file still appears to match the original source captured by Metrics Plus."
+        elif stored_source_codec and current_codec and stored_source_codec != current_codec:
+            source_state = (
+                "The current file is now {} while the recorded source was {}; "
+                "the original appears to have been replaced."
+            ).format(current_codec, stored_source_codec)
+        else:
+            source_state = (
+                "The current file no longer closely matches the recorded source size; "
+                "the original may have been replaced."
+            )
+
+        duration = _float(r.get("source_duration")) or _float(identity.get("duration")) or _float(r.get("dest_duration"))
+        sample_length = 45 if duration and duration >= 3600 else 30
+        starts = _sample_timestamps(duration, sample_length)
+
+        current_qp = _int(r.get("encoder_quality"))
+        if current_qp is None:
+            current_qp = 28
+        qp_values = []
+        for value in (current_qp, current_qp + 3, current_qp + 6, current_qp + 9):
+            value = max(18, min(40, value))
+            if value not in qp_values:
+                qp_values.append(value)
+
+        speed = _float(diagnosed.get("encode_speed"))
+        total_test_video_seconds = len(starts) * sample_length * len(qp_values)
+        estimated_encode_seconds = (
+            total_test_video_seconds / speed
+            if speed and speed > 0 else None
+        )
+
+        return {
+            "success": True,
+            "record": diagnosed,
+            "source_check": {
+                "path": source_path,
+                "original_available": original_available,
+                "message": source_state,
+                "stored_codec": r.get("source_codec"),
+                "current_codec": identity.get("codec"),
+                "stored_size": r.get("source_size"),
+                "current_size": identity.get("size"),
+                "size_ratio": size_ratio,
+            },
+            "plan": {
+                "sample_length": sample_length,
+                "sample_starts": starts,
+                "qp_values": qp_values,
+                "sample_count": len(starts),
+                "encode_variants": len(starts) * len(qp_values),
+                "estimated_nvenc_seconds": estimated_encode_seconds,
+                "quality_metrics": ["xpsnr", "ssim"],
+                "can_execute_safely": original_available and bool(starts),
+                "mode": "planning_only",
+            },
+        }
+    finally:
+        conn.close()
+
+
 def _overview(arguments):
     conn = _metrics_db()
     if conn is None:
@@ -381,6 +527,11 @@ def render_frontend_panel(data):
     if path == "overview":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_overview(args), default=str)
+        return data
+
+    if path == "samplePlan":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_sample_plan(args), default=str)
         return data
 
     if path == "selfRecord":
