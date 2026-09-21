@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.5.1</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.5.2</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -111,7 +111,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 </div>
 </div>
 
-<dialog id="reviewDialog"><div class="dialog">
+<div id="reviewDialog" class="section" style="display:none;margin-top:14px">
   <h3 id="reviewTitle">Calibration Review</h3>
   <div id="reviewSubtitle" class="sub"></div>
   <div class="warning" style="margin-top:12px"><strong>Blind review:</strong> Candidates are labeled A/B/C/D. Their QP values and XPSNR/SSIM scores remain hidden until all candidates are rated.</div>
@@ -140,9 +140,9 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
   </div>
   <div class="sample-actions">
     <button id="deleteReviewFiles" class="btn" style="display:none">Delete retained files</button>
-    <button id="closeReview" class="btn">Close</button>
+    <button id="closeReview" class="btn">Hide review</button>
   </div>
-</div></dialog>
+</div>
 
 <dialog id="planDialog"><div class="dialog">
   <h3 id="planTitle">Sample-test plan</h3>
@@ -184,7 +184,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.5.1';
+const PLUGIN_VERSION='0.5.2';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -567,13 +567,23 @@ async function loadCalibrationRuns(showNotice){
     }else{
       $('reviewRuns').innerHTML=calibrationRuns.map(function(run){
         const rated=Object.values(run.ratings||{}).filter(Boolean).length;
-        return '<button class="review-run" data-run="'+esc(run.id)+'">'+
+        const safe=(run.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
+        return '<div class="review-run" style="cursor:default">'+
           '<strong>'+(run.completed?'✓ ':'')+esc(run.file_name||run.id)+'</strong>'+
           '<div class="sub">'+rated+' / '+esc(run.candidate_count)+' candidates rated · '+esc(run.sample_count)+' reference clips</div>'+
-        '</button>'
+          '<div class="sample-actions" style="margin-top:7px">'+
+            '<button class="btn primary" data-open-review="'+esc(run.id)+'">Open review</button>'+
+            '<button class="btn" data-download-bundle="'+esc(run.id)+'" data-filename="'+esc(safe+' - blind calibration clips.zip')+'">Download ZIP</button>'+
+          '</div>'+
+        '</div>'
       }).join('');
-      document.querySelectorAll('.review-run[data-run]').forEach(function(btn){
-        btn.onclick=function(){openCalibrationReview(btn.dataset.run)}
+      document.querySelectorAll('[data-open-review]').forEach(function(btn){
+        btn.onclick=function(){openCalibrationReview(btn.dataset.openReview)}
+      });
+      document.querySelectorAll('[data-download-bundle]').forEach(function(btn){
+        btn.onclick=function(){
+          downloadCalibrationBlob(calibrationBundleUrl(btn.dataset.downloadBundle),btn.dataset.filename)
+        }
       })
     }
     clearTimeout(qualityPollTimer);
@@ -582,7 +592,7 @@ async function loadCalibrationRuns(showNotice){
       qualityPollTimer=setTimeout(async function(){
         const openId=currentReviewRun&&currentReviewRun.id;
         await loadCalibrationRuns(false);
-        if(openId&&$('reviewDialog').open){
+        if(openId&&$('reviewDialog').style.display!=='none'){
           const refreshed=findReviewRun(openId);
           if(refreshed)renderReviewRun(refreshed)
         }
@@ -666,9 +676,15 @@ function renderReviewRun(run){
 
 function openCalibrationReview(runId){
   const run=findReviewRun(runId);
-  if(!run)return;
+  if(!run){
+    notice('Calibration run could not be found.');
+    return
+  }
   renderReviewRun(run);
-  $('reviewDialog').showModal()
+  $('reviewDialog').style.display='block';
+  setTimeout(function(){
+    $('reviewDialog').scrollIntoView({behavior:'smooth',block:'start'})
+  },50)
 }
 
 async function saveCalibrationRating(runId,label,rating){
@@ -696,7 +712,7 @@ async function deleteCurrentReviewFiles(){
     const r=await fetch(base()+'deleteCalibrationFiles?'+params.toString(),{cache:'no-store'});
     const d=await r.json();
     if(!d.success)throw new Error(d.message||'Unable to delete retained files');
-    $('reviewDialog').close();
+    $('reviewDialog').style.display='none';
     currentReviewRun=null;
     await loadCalibrationRuns(false);
     notice('Retained calibration files deleted. Ratings and objective results were kept.')
@@ -782,7 +798,7 @@ $('openExistingReview').onclick=async function(){
   const run=findReviewRun(runId);
   if(run){
     $('planDialog').close();
-    openCalibrationReview(runId)
+    setTimeout(function(){openCalibrationReview(runId)},50)
   }else{
     notice('The retained calibration run could not be loaded. Refresh Calibration Review and try again.')
   }
@@ -803,8 +819,10 @@ $('updatePlugin').onclick=updatePlugin;
 $('runSampleTest').onclick=startSampleTest;
 $('closePlan').onclick=function(){$('planDialog').close()};
 $('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
-$('closeReview').onclick=function(){$('reviewDialog').close()};
-$('reviewDialog').onclick=function(e){if(e.target===$('reviewDialog'))$('reviewDialog').close()};
+$('closeReview').onclick=function(){
+  $('reviewDialog').style.display='none';
+  currentReviewRun=null
+};
 $('downloadReviewBundle').onclick=function(){
   if(!currentReviewRun)return;
   const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
