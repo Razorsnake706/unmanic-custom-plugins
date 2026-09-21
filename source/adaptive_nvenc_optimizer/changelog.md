@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1
+
+- Fixed a Calibration Review backend crash that occurred after ratings were saved. A stale `excluded_run_ids` reference could make the review list fail to reload, which made other retained reviews appear to disappear and could leave refresh actions looking broken.
+- Existing calibration runs/ratings are not deleted by this bug; the fixed review loader reads them normally again.
+- Fixed a race where the sample-test job reported `completed` before its retained run had actually been persisted to `adaptive_optimizer.db`.
+- Sample tests now report a short **finalizing** stage while the retained run is saved, reference state is updated, and automatic ZIP preparation is started.
+- The UI now waits for Calibration Review data to refresh after finalization before presenting the retained-review action as ready.
+- This makes **Review retained clips** reliably find a newly completed episode instead of occasionally opening before the review record existed.
+
 ## 0.7.0
 
 - Replaced the narrow first-pass calibration ladder with a **coarse boundary-search ladder**. A typical QP 28 source now tests QP 28 / 34 / 40 / 46 instead of 28 / 31 / 34 / 37.
