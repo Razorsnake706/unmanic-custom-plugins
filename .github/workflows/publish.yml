@@ -40,6 +40,7 @@ jobs:
           for plugin_dir in dist/*/; do
             plugin_name="$(basename "$plugin_dir")"
             [ "$plugin_name" = "versions" ] && continue
+            [ "$plugin_name" = "release-notes" ] && continue
             mkdir -p "/tmp/unmanic-repo/$plugin_name"
             cp -a "$plugin_dir". "/tmp/unmanic-repo/$plugin_name/"
           done
