@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed the Adaptive dashboard appearing stale after new encodes completed.
+- The advisor had been sorted by test priority, so older high-priority rows stayed at the top even after fresh Metrics Plus records arrived. The default is now **Newest first**.
+- Added an **Advisor order** selector so you can switch between **Newest first** and **Best test candidates** without losing the ranking view.
+- Added a Metrics Plus feed status banner showing the newest NVENC record timestamp and total NVENC record count.
+- The **Refresh data** button now visibly enters a Refreshing state, bypasses browser caching, updates the feed timestamp, and reports the newest record it read.
+- Exposed Metrics Plus database/WAL modification timestamps in the backend for refresh diagnostics.
+- Manual sample testing remains unchanged.
+
 ## 0.2.0
 
 - Added the first real **manual GPU sample-test** workflow.
