@@ -87,14 +87,28 @@ def _mean(values):
     return statistics.mean(values) if values else None
 
 
+def _sane_video_bitrate(total_bitrate, audio_bitrate, reported_video_bitrate):
+    total = _float(total_bitrate)
+    audio = _float(audio_bitrate)
+    video = _float(reported_video_bitrate)
+    if total is None:
+        return video
+    residual = total - (audio or 0)
+    if residual <= 0:
+        return video
+    if video is None or video > total * 1.02 or video > residual * 1.10:
+        return residual
+    return video
+
+
 def _diagnose(row):
     r = dict(row)
     source_total = _float(r.get("source_total_bitrate"))
     dest_total = _float(r.get("dest_total_bitrate"))
-    source_video = _float(r.get("source_video_bitrate"))
-    dest_video = _float(r.get("dest_video_bitrate"))
     source_audio = _float(r.get("source_audio_bitrate"))
     dest_audio = _float(r.get("dest_audio_bitrate"))
+    source_video = _sane_video_bitrate(source_total, source_audio, r.get("source_video_bitrate"))
+    dest_video = _sane_video_bitrate(dest_total, dest_audio, r.get("dest_video_bitrate"))
     saved_pct = _float(r.get("percent_saved"))
     source_size = _float(r.get("source_size"))
     dest_size = _float(r.get("dest_size"))
@@ -168,8 +182,8 @@ def _diagnose(row):
         "percent_saved": saved_pct,
         "source_total_bitrate": r.get("source_total_bitrate"),
         "dest_total_bitrate": r.get("dest_total_bitrate"),
-        "source_video_bitrate": r.get("source_video_bitrate"),
-        "dest_video_bitrate": r.get("dest_video_bitrate"),
+        "source_video_bitrate": source_video,
+        "dest_video_bitrate": dest_video,
         "source_audio_bitrate": r.get("source_audio_bitrate"),
         "dest_audio_bitrate": r.get("dest_audio_bitrate"),
         "video_reduction": video_reduction,
@@ -288,6 +302,22 @@ def _overview(arguments):
         conn.close()
 
 
+def _installed_plugin_record():
+    try:
+        records = PluginsHandler().get_plugin_list_filtered_and_sorted(plugin_id=PLUGIN_ID)
+        for record in records or []:
+            return {
+                "success": True,
+                "id": record.get("id"),
+                "plugin_id": record.get("plugin_id"),
+                "version": record.get("version"),
+                "update_available": record.get("update_available"),
+            }
+    except Exception:
+        logger.exception("Unable to find installed plugin record")
+    return {"success": False, "message": "Installed plugin record was not found."}
+
+
 def _refresh_custom_repo_cache_direct(force=False):
     global _last_direct_repo_refresh
 
@@ -351,6 +381,11 @@ def render_frontend_panel(data):
     if path == "overview":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_overview(args), default=str)
+        return data
+
+    if path == "selfRecord":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_installed_plugin_record(), default=str)
         return data
 
     if path == "refreshRepo":
