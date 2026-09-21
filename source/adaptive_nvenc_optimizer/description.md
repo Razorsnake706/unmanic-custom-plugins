@@ -6,7 +6,7 @@ Its long-term goal is to make Unmanic's GPU video encoding self-tuning: analyze 
 
 ## Current phase
 
-Version 0.1.0 is intentionally **learning / observation only**.
+Current releases have moved beyond observation into **manual calibration testing**. Full automatic encoding is still disabled.
 
 It reads the File Size Metrics Plus SQLite database in read-only mode and:
 
@@ -15,7 +15,10 @@ It reads the File Size Metrics Plus SQLite database in read-only mode and:
 - summarizes observed QP, compression ratio, and encode speed;
 - diagnoses common outcomes such as good compression, audio-limited output, already-efficient sources, and files worth future sample testing;
 - ranks useful sample-test candidates;
-- never changes media files or encoder settings yet.
+- can manually run short HEVC/NVENC QP test ladders when the original source is still safely available;
+- measures the samples with XPSNR + SSIM;
+- stores calibration results for later model training;
+- never replaces the real media file or changes the normal Unmanic encoder settings in this phase.
 
 Future phases will add XPSNR/SSIM calibration, GPU sample encodes, dynamic QP selection, storage-ROI decisions, and eventually automatic worker integration.
 
