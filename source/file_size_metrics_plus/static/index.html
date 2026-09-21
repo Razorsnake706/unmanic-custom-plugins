@@ -74,7 +74,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.14</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.15</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="updatePlugin" class="btn primary">Update plugin</button><button id="import" class="btn">Import official history</button><button id="export" class="btn">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -199,7 +199,7 @@ let latestOptions={libraries:[],codecs:[],workers:[]};
 let filteredSummary=null;
 let selectionSummaryTimer=null;
 let selectionSummarySequence=0;
-const PLUGIN_VERSION='0.1.14';
+const PLUGIN_VERSION='0.1.15';
 
 const humanBytes=v=>{
   if(v===null||v===undefined)return'—';
@@ -663,49 +663,46 @@ async function updatePluginDirect(){
     if(!result.success)throw new Error(result.message||'Repository refresh failed');
     const versions=(result.updated||[]).map(function(x){return x.version}).filter(Boolean);
     const latest=versions[0]||PLUGIN_VERSION;
+    const record=await getInstalledPluginRecord();
+    const current=(record&&record.version)||PLUGIN_VERSION;
 
-    const installedRecord=await getInstalledPluginRecord();
-    const installedVersion=(installedRecord&&installedRecord.version)||PLUGIN_VERSION;
-
-    if(compareVersions(latest,installedVersion)<=0){
-      notice('File Size Metrics Plus '+installedVersion+' is already up to date.');
+    if(compareVersions(latest,current)<=0){
+      notice('File Size Metrics Plus '+current+' is already up to date.');
       return
     }
-    if(!installedRecord||installedRecord.id===undefined||installedRecord.id===null){
-      throw new Error('Could not find the installed File Size Metrics Plus database record.')
-    }
+
+    btn.textContent='Scheduling '+latest+'...';
+    const schedule=await fetch(base()+'updateSelf?_='+Date.now(),{cache:'no-store'});
+    const scheduled=await readJsonResponse(schedule);
+    if(!schedule.ok||!scheduled.success)throw new Error(scheduled.message||scheduled._raw||'Unable to schedule plugin update.');
 
     btn.textContent='Updating to '+latest+'...';
-
-    // Mirror Unmanic's normal "Update" action for an already-installed plugin.
-    // The install endpoint is intended for install-by-plugin-id and can throw a
-    // traceback when used to self-update an existing plugin on current builds.
-    const r=await fetch('/api/v2/plugins/update',{
-      method:'POST',
-      credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_list:[Number(installedRecord.id)]})
-    });
-    const d=await readJsonResponse(r);
-
-    let success=r.ok&&d.success!==false;
-    if(!success){
-      // A self-update may reload this plugin while the request is unwinding.
-      // Verify the installed version before reporting failure.
-      await new Promise(function(resolve){setTimeout(resolve,1500)});
-      const installed=await getInstalledPluginVersion();
-      success=installed&&compareVersions(installed,latest)>=0;
+    let installed=null,lastError=null;
+    for(let attempt=0;attempt<20;attempt++){
+      await new Promise(function(resolve){setTimeout(resolve,1000)});
+      try{
+        const check=await getInstalledPluginRecord();
+        if(check&&check.version){
+          installed=check.version;
+          if(compareVersions(installed,latest)>=0)break
+        }
+        const sr=await fetch(base()+'updateStatus?_='+Date.now(),{cache:'no-store'});
+        const sd=await readJsonResponse(sr);
+        if(sd&&sd.state&&sd.state.error)lastError=sd.state.error
+      }catch(e){
+        // Plugin may be reloading for a moment. Continue polling.
+      }
     }
 
-    if(!success){
-      const raw=(d&&d._raw)?String(d._raw).replace(/\s+/g,' ').slice(0,260):'';
-      throw new Error(raw||'Unmanic reported that the plugin update failed.')
+    if(installed&&compareVersions(installed,latest)>=0){
+      notice('Updated File Size Metrics Plus to '+installed+'. Reloading the panel...');
+      setTimeout(function(){location.reload()},1200);
+      return
     }
 
-    notice('Updated File Size Metrics Plus to '+latest+'. Reloading the panel...');
-    setTimeout(function(){location.reload()},1800)
+    throw new Error(lastError||'The update was scheduled but the new version was not detected within 20 seconds. Check the normal Plugins page.');
   }catch(e){
-    notice('Unable to update plugin: '+e.message)
+    notice('Unable to update plugin: '+String(e.message||e).replace(/\s+/g,' ').slice(0,300))
   }finally{
     btn.disabled=false;
     btn.textContent=oldText
