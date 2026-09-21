@@ -251,3 +251,11 @@ Future rounds can use the stored boundary-search metadata to narrow between the 
 Sample generation now has an explicit **finalizing** stage. The job is not reported as complete until its retained calibration run has been written to `adaptive_optimizer.db`, reference retention has been updated, and automatic ZIP preparation has been started. This prevents the Review retained clips action from racing ahead of the saved review record.
 
 Calibration Review reloads preserve all existing retained runs and ratings. A previously fixed loader regression could fail after ratings were present; it did not delete the underlying review data.
+
+## Finishing a calibration review
+
+After all blind candidates are rated, Adaptive may still need the retained Reference/Candidate clips for targeted XPSNR/SSIM scoring. During that period the review shows that the ratings are saved and keeps the cleanup action locked.
+
+When objective scoring finishes, use **Finish review & delete clips**. This removes the temporary retained reference clips, candidate clips, and cached ZIP while preserving the subjective ratings, revealed Candidate-to-QP mapping, bitrate measurements, and objective quality results in the optimizer history.
+
+For **All candidates look indistinguishable**, the review immediately records all blind candidates as indistinguishable and targets the highest tested QP for objective scoring. The Finish action becomes available once that scoring pass completes.
