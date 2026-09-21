@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import json
+import math
+import os
+import sqlite3
+import statistics
+import time
+
+import requests
+
+from unmanic import config
+from unmanic.libs.logs import UnmanicLogging
+from unmanic.libs.plugins import PluginsHandler
+from unmanic.libs.unplugins.settings import PluginSettings
+
+PLUGIN_ID = "adaptive_nvenc_optimizer"
+METRICS_PLUGIN_ID = "file_size_metrics_plus"
+CUSTOM_REPO_MATCH = "Razorsnake706/unmanic-custom-plugins"
+_REPO_REFRESH_INTERVAL = 300
+
+logger = UnmanicLogging.get_logger(name="Unmanic.Plugin.adaptive_nvenc_optimizer")
+_last_direct_repo_refresh = 0.0
+
+
+class Settings(PluginSettings):
+    settings = {}
+
+
+settings = Settings()
+
+
+def _arg(arguments, name, default=""):
+    value = (arguments or {}).get(name, default)
+    if isinstance(value, list):
+        value = value[0] if value else default
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    return value
+
+
+def _float(value):
+    try:
+        return float(value) if value is not None and str(value) != "" else None
+    except Exception:
+        return None
+
+
+def _int(value):
+    try:
+        return int(value) if value is not None and str(value) != "" else None
+    except Exception:
+        return None
+
+
+def _metrics_db_path():
+    userdata = config.Config().get_userdata_path()
+    return os.path.join(userdata, METRICS_PLUGIN_ID, "metrics_plus.db")
+
+
+def _metrics_db():
+    path = _metrics_db_path()
+    if not os.path.exists(path):
+        return None
+    conn = sqlite3.connect("file:{}?mode=ro".format(path), uri=True, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def _pct_change(before, after):
+    before = _float(before)
+    after = _float(after)
+    if before in (None, 0) or after is None:
+        return None
+    return (before - after) / before * 100.0
+
+
+def _median(values):
+    values = [v for v in values if v is not None]
+    return statistics.median(values) if values else None
+
+
+def _mean(values):
+    values = [v for v in values if v is not None]
+    return statistics.mean(values) if values else None
+
+
+def _diagnose(row):
+    r = dict(row)
+    source_total = _float(r.get("source_total_bitrate"))
+    dest_total = _float(r.get("dest_total_bitrate"))
+    source_video = _float(r.get("source_video_bitrate"))
+    dest_video = _float(r.get("dest_video_bitrate"))
+    source_audio = _float(r.get("source_audio_bitrate"))
+    dest_audio = _float(r.get("dest_audio_bitrate"))
+    saved_pct = _float(r.get("percent_saved"))
+    source_size = _float(r.get("source_size"))
+    dest_size = _float(r.get("dest_size"))
+    media_duration = _float(r.get("source_duration")) or _float(r.get("dest_duration"))
+    task_duration = _float(r.get("duration"))
+    width = _float(r.get("source_width"))
+    height = _float(r.get("source_height"))
+    fps = _float(r.get("source_fps"))
+
+    video_reduction = _pct_change(source_video, dest_video)
+    audio_reduction = _pct_change(source_audio, dest_audio)
+    audio_share = (dest_audio / dest_total * 100.0) if dest_audio and dest_total else None
+    speed = (media_duration / task_duration) if media_duration and task_duration else None
+    source_bpppf = (
+        source_video / (width * height * fps)
+        if source_video and width and height and fps else None
+    )
+    dest_bpppf = (
+        dest_video / (width * height * fps)
+        if dest_video and width and height and fps else None
+    )
+
+    required = [
+        source_total, dest_total, source_video, dest_video,
+        r.get("encoder_quality"), r.get("encoder_preset"),
+        r.get("source_fps"), r.get("source_bit_depth"), r.get("dest_bit_depth"),
+    ]
+    completeness = sum(1 for v in required if v not in (None, "")) / len(required) * 100.0
+
+    status = "Needs more data"
+    reason = "This encode predates some of the diagnostic fields needed for a reliable recommendation."
+    priority = 0.0
+
+    if completeness >= 75:
+        if audio_share is not None and audio_share >= 45:
+            status = "Audio-limited"
+            reason = "Video compressed substantially, but audio is now a large share of the final bitrate."
+            priority = 35.0
+        elif saved_pct is not None and video_reduction is not None and saved_pct >= 45 and video_reduction >= 45:
+            status = "Good compression"
+            reason = "Both total file size and video bitrate dropped strongly at the current NVENC settings."
+            priority = 10.0
+        elif source_bpppf is not None and source_bpppf <= 0.055:
+            status = "Already efficient"
+            reason = "The source video bitrate is already low for its resolution and frame rate."
+            priority = 15.0
+        elif video_reduction is not None and video_reduction < 25:
+            status = "Sample-test candidate"
+            reason = "The video bitrate did not fall much; a controlled QP sample test may find additional savings."
+            priority = 80.0
+        elif saved_pct is not None and saved_pct < 25:
+            status = "Sample-test candidate"
+            reason = "Overall storage savings were modest; the source is worth profiling before a full retry."
+            priority = 70.0
+        else:
+            status = "Worth profiling"
+            reason = "The encode is usable, but sample testing could determine whether a higher QP remains acceptable."
+            priority = 50.0
+
+    # Prefer examining large outputs when two rows have the same diagnosis.
+    if dest_size:
+        priority += min(25.0, dest_size / (1024 ** 3) * 2.5)
+
+    return {
+        "id": r.get("id"),
+        "file_name": r.get("file_name"),
+        "library_name": r.get("library_name"),
+        "finish_time": r.get("finish_time"),
+        "source_size": r.get("source_size"),
+        "dest_size": r.get("dest_size"),
+        "percent_saved": saved_pct,
+        "source_total_bitrate": r.get("source_total_bitrate"),
+        "dest_total_bitrate": r.get("dest_total_bitrate"),
+        "source_video_bitrate": r.get("source_video_bitrate"),
+        "dest_video_bitrate": r.get("dest_video_bitrate"),
+        "source_audio_bitrate": r.get("source_audio_bitrate"),
+        "dest_audio_bitrate": r.get("dest_audio_bitrate"),
+        "video_reduction": video_reduction,
+        "audio_reduction": audio_reduction,
+        "audio_share": audio_share,
+        "encode_speed": speed,
+        "source_bpppf": source_bpppf,
+        "dest_bpppf": dest_bpppf,
+        "encoder_name": r.get("encoder_name"),
+        "encoder_rate_control": r.get("encoder_rate_control"),
+        "encoder_quality": r.get("encoder_quality"),
+        "encoder_preset": r.get("encoder_preset"),
+        "encoder_tune": r.get("encoder_tune"),
+        "encoder_lookahead": r.get("encoder_lookahead"),
+        "encoder_spatial_aq": r.get("encoder_spatial_aq"),
+        "encoder_aq_strength": r.get("encoder_aq_strength"),
+        "source_width": r.get("source_width"),
+        "source_height": r.get("source_height"),
+        "source_fps": r.get("source_fps"),
+        "source_bit_depth": r.get("source_bit_depth"),
+        "dest_bit_depth": r.get("dest_bit_depth"),
+        "source_path": r.get("source_path"),
+        "dest_path": r.get("dest_path"),
+        "diagnosis": status,
+        "reason": reason,
+        "completeness": completeness,
+        "priority": priority,
+    }
+
+
+def _overview(arguments):
+    conn = _metrics_db()
+    if conn is None:
+        return {
+            "success": False,
+            "connected": False,
+            "message": "File Size Metrics Plus database was not found. Install and run File Size Metrics Plus first.",
+            "metrics_db": _metrics_db_path(),
+        }
+
+    try:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(metrics)").fetchall()}
+        required_columns = {
+            "encoder_name", "source_total_bitrate", "dest_total_bitrate",
+            "source_video_bitrate", "dest_video_bitrate", "encoder_quality",
+        }
+        missing = sorted(required_columns - columns)
+
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM metrics
+            WHERE success=1
+              AND imported=0
+              AND encoder_name IS NOT NULL
+              AND LOWER(encoder_name) LIKE '%nvenc%'
+            ORDER BY finish_time DESC, id DESC
+            """
+        ).fetchall()
+
+        analyzed = [_diagnose(row) for row in rows]
+        complete = [x for x in analyzed if x["completeness"] >= 75]
+        qps = [_float(x.get("encoder_quality")) for x in complete]
+        reductions = [_float(x.get("percent_saved")) for x in complete]
+        speeds = [_float(x.get("encode_speed")) for x in complete]
+
+        qp_counts = {}
+        for value in qps:
+            if value is None:
+                continue
+            key = str(int(value) if float(value).is_integer() else value)
+            qp_counts[key] = qp_counts.get(key, 0) + 1
+
+        diagnosis_counts = {}
+        for item in analyzed:
+            diagnosis_counts[item["diagnosis"]] = diagnosis_counts.get(item["diagnosis"], 0) + 1
+
+        minimum_training = 10
+        readiness_count = len(complete)
+        if missing:
+            readiness = "Metrics Plus upgrade required"
+        elif readiness_count >= 30:
+            readiness = "Strong baseline"
+        elif readiness_count >= minimum_training:
+            readiness = "Baseline ready"
+        else:
+            readiness = "Collecting baseline"
+
+        limit = max(10, min(250, _int(_arg(arguments, "limit", 100)) or 100))
+        candidates = sorted(
+            analyzed,
+            key=lambda x: (x.get("priority") or 0, x.get("dest_size") or 0),
+            reverse=True,
+        )[:limit]
+
+        return {
+            "success": True,
+            "connected": True,
+            "metrics_db": _metrics_db_path(),
+            "missing_columns": missing,
+            "summary": {
+                "nvenc_records": len(analyzed),
+                "complete_records": len(complete),
+                "minimum_training_records": minimum_training,
+                "readiness": readiness,
+                "average_reduction": _mean(reductions),
+                "median_qp": _median(qps),
+                "average_speed": _mean(speeds),
+                "qp_counts": qp_counts,
+                "diagnosis_counts": diagnosis_counts,
+            },
+            "candidates": candidates,
+            "learning_mode": True,
+        }
+    finally:
+        conn.close()
+
+
+def _refresh_custom_repo_cache_direct(force=False):
+    global _last_direct_repo_refresh
+
+    now = time.time()
+    if not force and (now - _last_direct_repo_refresh) < _REPO_REFRESH_INTERVAL:
+        return {"success": True, "skipped": True}
+
+    handler = PluginsHandler()
+    matching = []
+    for repo in handler.get_plugin_repos():
+        path = str(repo.get("path") or "")
+        if CUSTOM_REPO_MATCH.lower() in path.lower():
+            matching.append(path)
+
+    if not matching:
+        return {"success": False, "message": "Custom repository is not configured in Unmanic."}
+
+    updated = []
+    for repo_path in matching:
+        separator = "&" if "?" in repo_path else "?"
+        fetch_url = "{}{}adaptive_nvenc_cache_bust={}".format(repo_path, separator, int(now))
+        response = requests.get(
+            fetch_url,
+            timeout=15,
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+        )
+        response.raise_for_status()
+        repo_data = response.json()
+
+        plugins = repo_data.get("plugins") or []
+        plugin_entry = next((p for p in plugins if p.get("id") == PLUGIN_ID), None)
+        if not plugin_entry:
+            raise RuntimeError("Repository JSON does not contain {}.".format(PLUGIN_ID))
+
+        repo_id = handler.get_plugin_repo_id(repo_path)
+        cache_file = handler.get_repo_cache_file(repo_id)
+        tmp_file = cache_file + ".adaptive.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as fh:
+            json.dump(repo_data, fh, indent=4)
+        os.replace(tmp_file, cache_file)
+        updated.append({
+            "repo": repo_path,
+            "cache_file": cache_file,
+            "version": plugin_entry.get("version"),
+        })
+
+    _last_direct_repo_refresh = now
+    return {"success": True, "updated": updated}
+
+
+def render_frontend_panel(data):
+    path = str(data.get("path") or "").strip("/")
+    args = data.get("arguments") or {}
+
+    if path == "":
+        try:
+            _refresh_custom_repo_cache_direct()
+        except Exception:
+            logger.exception("Direct custom repository refresh failed.")
+
+    if path == "overview":
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(_overview(args), default=str)
+        return data
+
+    if path == "refreshRepo":
+        try:
+            result = _refresh_custom_repo_cache_direct(force=True)
+        except Exception as exc:
+            logger.exception("Direct custom repository refresh failed.")
+            result = {"success": False, "message": str(exc)}
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(result, default=str)
+        return data
+
+    static_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    with open(static_path, "r", encoding="utf-8") as fh:
+        data["content_type"] = "text/html"
+        data["content"] = fh.read()
+    return data
