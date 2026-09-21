@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2
+
+- Added draggable, persistent advisor column widths with a **Reset column widths** control.
+- Clicking an Encode Advisor row now builds a read-only sample-test plan.
+- Sample planning checks whether the original source still appears to exist at the recorded path before allowing future quality comparisons.
+- Added representative sample positions across the media runtime and a bounded QP ladder based on the observed encode QP.
+- Added an estimated NVENC sample-test duration using the file's measured encode speed.
+- Added XPSNR + SSIM as the planned first objective quality metrics.
+- This release still does not run sample encodes or alter media/encoder settings; it establishes the calibration workflow safely first.
+
 ## 0.1.1
 
 - Fixed the plugin self-update lookup by querying Unmanic's installed-plugin database directly from the plugin backend.
