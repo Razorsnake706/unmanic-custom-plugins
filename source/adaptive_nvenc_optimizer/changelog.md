@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+- Added the first real **manual GPU sample-test** workflow.
+- For a row whose original source is still safely available, the optimizer can now run the planned short HEVC/NVENC variants at the QP ladder shown in the dialog.
+- Sample tests run in a background thread so the panel request stays responsive.
+- Added objective quality measurement using the FFmpeg build's **XPSNR + SSIM** filters.
+- Added per-QP result summaries showing average XPSNR, SSIM, sample video bitrate, relative bitrate, GPU encode time, and completed quality samples.
+- Added persistent sample-test history in `adaptive_optimizer.db` for future calibration/model training.
+- Added plugin settings for sample count, short-form sample duration, long-form sample duration, and **Keep calibration/test sample files**.
+- Sample retention defaults to OFF. When disabled, temporary encoded clips are deleted automatically after their scores are recorded. When enabled, clips plus a `result.json` are kept under the plugin userdata sample directory.
+- The manual test never replaces or modifies the real media file.
+- Only one manual sample test runs at a time to avoid stacking multiple calibration jobs on the GPU.
+- Hardware decoding is attempted when the recorded encode used CUDA; if that sample decode fails, the test retries with CPU decode while keeping NVENC for the actual sample encode.
+- Full automatic per-file QP selection is still disabled; this release is for validating the calibration pipeline first.
+
 ## 0.1.3
 
 - Reworked the in-panel updater so the plugin no longer replaces/reloads itself inside the same Tornado API request.
