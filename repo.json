@@ -24,7 +24,7 @@
                 "on_postprocessor_task_results": 0
             },
             "tags": "data panel metrics history analytics",
-            "version": "0.1.4"
+            "version": "0.1.5"
         }
     ]
 }
