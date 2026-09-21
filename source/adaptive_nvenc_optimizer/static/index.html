@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.6.1</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.7.0</div></div>
   <div class="actions"><button id="openCalibrationHub" class="btn">Calibration Review <span id="topReviewCount" class="review-pill">0</span></button><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -129,6 +129,12 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
       <div class="section" style="margin-top:12px">
         <h2>1. Judge candidate quality</h2>
         <div class="sub">Watch each candidate against the reference across all sample positions, then choose one overall rating for that candidate.</div>
+        <div class="warning" style="margin-top:10px">
+          <strong>If they genuinely all look the same:</strong> don't guess. Record that result directly; Adaptive will treat it as "no visible boundary found yet" and objectively probe the highest QP in this ladder.
+          <div class="sample-actions" style="margin-top:8px">
+            <button id="allIndistinguishable" class="btn primary">All candidates look indistinguishable</button>
+          </div>
+        </div>
         <div id="reviewCandidates" style="margin-top:10px"></div>
       </div>
       <div class="section" style="margin-top:12px">
@@ -173,7 +179,11 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
   </div>
   <div id="planGrid" class="plan-grid"></div>
   <div class="section" style="margin-top:10px"><h2>Representative sample positions</h2><div id="sampleTimes" class="timeline"></div></div>
-  <div class="section" style="margin-top:10px"><h2>QP ladder</h2><div id="qpValues" class="timeline"></div></div>
+  <div class="section" style="margin-top:10px">
+    <h2>QP boundary-search ladder</h2>
+    <div id="qpValues" class="timeline"></div>
+    <div id="qpStrategyInfo" class="sub" style="margin-top:7px">The first round intentionally uses wider spacing to make a visible quality boundary easier to find.</div>
+  </div>
   <div id="sampleSettingInfo" class="sub" style="margin-top:12px"></div>
   <div class="warning" style="margin-top:10px"><strong>Manual test safety:</strong> the test only writes temporary plugin sample files. It does not replace the episode. For clean timing/results, avoid starting a test while Unmanic is already heavily using the same GPU.</div>
 
@@ -202,7 +212,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.6.1';
+const PLUGIN_VERSION='0.7.0';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -367,6 +377,9 @@ async function openSamplePlan(id){
     ].map(function(x){return'<div class="plan-card"><span class="label">'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>'}).join('');
     $('sampleTimes').innerHTML=(plan.sample_starts||[]).map(function(v){return'<span class="pill">'+timecode(v)+' → '+timecode(Number(v)+Number(plan.sample_length||0))+'</span>'}).join('')||'<span class="muted">No safe sample positions available.</span>';
     $('qpValues').innerHTML=(plan.qp_values||[]).map(function(v){return'<span class="pill">QP '+esc(v)+'</span>'}).join('');
+    $('qpStrategyInfo').textContent=plan.calibration_strategy==='coarse_boundary'
+      ? 'Coarse boundary search: '+(plan.qp_values||[]).map(function(v){return 'QP '+v}).join(' / ')+'. The wider spacing replaces the old QP 28/31/34/37 ladder, which often looked too similar.'
+      : 'Calibration ladder.';
     currentPlan=d;
     currentPlanId=id;
     const existingReview=d.existing_review||null;
@@ -831,6 +844,26 @@ async function saveCalibrationRating(runId,label,rating){
   }
 }
 
+async function rateAllCalibration(runId,rating){
+  const label=ratingLabel(rating);
+  if(!confirm('Mark every blind candidate as '+label+'?\n\nUse this only when you genuinely cannot see a meaningful difference between any candidate and the reference.'))return;
+  try{
+    const params=new URLSearchParams({run_id:runId,rating:rating,_:String(Date.now())});
+    const r=await fetch(base()+'rateAllCalibration?'+params.toString(),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to save bulk calibration rating');
+    const index=calibrationRuns.findIndex(function(item){return String(item.id)===String(runId)});
+    if(index>=0&&d.run)calibrationRuns[index]=d.run;
+    if(d.run)renderReviewRun(d.run);
+    await loadCalibrationRuns(false);
+    const refreshed=findReviewRun(runId);
+    if(refreshed)renderReviewRun(refreshed);
+    notice('All candidates marked '+label+'. Adaptive will objectively probe the highest tested QP because no visible boundary was found.')
+  }catch(e){
+    notice('Unable to save bulk rating: '+e.message)
+  }
+}
+
 async function discardCurrentCalibrationRun(){
   if(!currentReviewRun)return;
   const name=currentReviewRun.file_name||'this calibration run';
@@ -969,6 +1002,10 @@ $('downloadReviewBundle').onclick=function(){
   if(!currentReviewRun)return;
   const safe=(currentReviewRun.file_name||'calibration').replace(/[\\/:*?"<>|]+/g,'_').slice(0,100);
   buildAndDownloadCalibrationBundle(currentReviewRun.id,safe+' - blind calibration clips.zip')
+};
+$('allIndistinguishable').onclick=function(){
+  if(!currentReviewRun)return;
+  rateAllCalibration(currentReviewRun.id,'indistinguishable')
 };
 $('discardCalibrationRun').onclick=discardCurrentCalibrationRun;
 $('deleteReviewFiles').onclick=deleteCurrentReviewFiles;
