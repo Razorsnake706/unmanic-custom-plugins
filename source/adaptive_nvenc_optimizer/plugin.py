@@ -1778,6 +1778,51 @@ def _rating_rows(run_id):
     return [dict(row) for row in rows]
 
 
+def _sample_rating_rows(run_id):
+    with _optimizer_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT run_id, sample_index, candidate_label, qp, rating, created, updated
+            FROM calibration_sample_ratings
+            WHERE run_id=?
+            ORDER BY sample_index, candidate_label
+            """,
+            (str(run_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _sample_rating_map(run_id):
+    out = {}
+    for row in _sample_rating_rows(run_id):
+        out[(int(row["sample_index"]), row["candidate_label"])] = row
+    return out
+
+
+def _aggregate_sample_ratings(candidate_map, sample_indexes, sample_rating_map):
+    severity = {
+        "indistinguishable": 0,
+        "acceptable": 1,
+        "borderline": 2,
+        "unacceptable": 3,
+    }
+    aggregated = {}
+    for label in sorted(candidate_map):
+        values = []
+        for sample_index in sample_indexes:
+            row = sample_rating_map.get((int(sample_index), label))
+            if row:
+                values.append(row.get("rating"))
+        reviewable = [value for value in values if value in severity]
+        if reviewable:
+            aggregated[label] = max(reviewable, key=lambda value: severity[value])
+        elif values and all(value == "unreviewable" for value in values):
+            aggregated[label] = "unreviewable"
+        else:
+            aggregated[label] = None
+    return aggregated
+
+
 def _save_sample_run_result(run_id, result):
     with _optimizer_db() as conn:
         conn.execute(
