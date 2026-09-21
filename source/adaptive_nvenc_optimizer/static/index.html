@@ -12,7 +12,7 @@ header{display:flex;gap:12px;align-items:center;justify-content:space-between;fl
 .notice{display:none;padding:9px 12px;border-radius:7px;background:#17304a;color:#dcefff;margin-bottom:12px}.notice.show{display:block}
 .banner{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.badge{display:inline-flex;padding:3px 8px;border-radius:99px;background:var(--panel2);font-size:11px;font-weight:800}.learning{background:#3b2f0d;color:#ffd66e}
 .grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:10px;margin-bottom:12px}.card{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:21px;font-weight:850;margin-top:3px}.tiny{font-size:11px;color:var(--muted);margin-top:4px}
-.two{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:12px}.section{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px}.section h2{font-size:15px;margin:0 0 9px}.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}.progress>div{height:100%;background:var(--accent)}.diag-grid{display:flex;gap:7px;flex-wrap:wrap}.diag{padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel2);font-size:12px}
+.two{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:12px}.section{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px}.section h2{font-size:15px;margin:0 0 9px}.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:8px 0}.progress>div{height:100%;background:var(--accent)}.diag-grid{display:flex;gap:7px;flex-wrap:wrap}.diag{padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--panel2);font-size:12px}.ref-badge{display:inline-flex;margin-top:5px;padding:2px 6px;border-radius:999px;border:1px solid rgba(21,128,61,.45);background:rgba(21,128,61,.12);color:var(--good);font-size:10px;font-weight:800}
 .table-tools{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}table{width:1900px;min-width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1;user-select:none}th[data-col]{position:sticky}tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--panel2)}.file{font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}.muted{color:var(--muted)}.status{font-weight:800;white-space:normal;overflow-wrap:anywhere}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .reason{font-size:12px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}.empty{padding:25px;text-align:center;color:var(--muted)}.resize-handle{position:absolute;right:-3px;top:0;width:8px;height:100%;cursor:col-resize;z-index:5}.resize-handle:after{content:"";position:absolute;right:3px;top:18%;height:64%;border-right:1px solid rgba(128,128,128,.5)}
 dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;background:transparent;color:var(--text)}dialog::backdrop{background:rgba(0,0,0,.6)}.dialog{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;max-height:90vh;overflow:auto}.dialog h3{margin:0 0 5px}.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}.plan-card{background:var(--panel2);border-radius:8px;padding:10px}.plan-card .label{display:block}.plan-card strong{display:block;margin-top:3px;overflow-wrap:anywhere}.timeline{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.pill{display:inline-flex;padding:4px 7px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);font-size:12px}.source-ok{color:var(--good)}.source-no{color:var(--warn)}.sample-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}.sample-progress{display:none;margin-top:14px}.sample-progress.show{display:block}.sample-results{display:none;margin-top:14px}.sample-results.show{display:block}.result-table{width:100%;border-collapse:collapse;table-layout:auto;min-width:0}.result-table th,.result-table td{position:static;padding:7px 8px;border-bottom:1px solid var(--border);font-size:12px}.result-table th{color:var(--muted);background:transparent}.warning{padding:9px 10px;border-radius:8px;background:rgba(180,83,9,.14);border:1px solid rgba(180,83,9,.35);color:var(--text);font-size:12px}.successbox{padding:9px 10px;border-radius:8px;background:rgba(21,128,61,.13);border:1px solid rgba(21,128,61,.35);font-size:12px}
@@ -22,14 +22,19 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.2.1</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.3.0</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
 
 <div class="banner">
-  <div><strong>Phase 2: Manual GPU calibration testing</strong><div class="sub">Historical analysis plus opt-in P1000 sample tests. Full media files and normal encoder settings are still never modified by this panel.</div></div>
+  <div><strong>Phase 2: Pre-encode reference capture + manual GPU calibration</strong><div class="sub">When enabled before the normal video transcoder, Adaptive saves small source-reference clips first, then lets the full Unmanic encode continue normally.</div></div>
   <span class="badge learning">MANUAL TEST ONLY</span>
+</div>
+
+<div class="banner" style="padding:9px 13px">
+  <div><strong>Library setup</strong><div class="sub">Enable Adaptive NVENC Optimizer in each GPU video library and place it <strong>before Transcode Video Files</strong>. Keep calibration/test sample files can stay OFF.</div></div>
+  <span class="badge">PRE-TRANSCODE</span>
 </div>
 
 <div class="banner" style="padding:9px 13px">
@@ -123,7 +128,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.2.1';
+const PLUGIN_VERSION='0.3.0';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
@@ -220,7 +225,7 @@ async function load(showNotice){
     $('qp').textContent=s.median_qp===null||s.median_qp===undefined?'—':Number(s.median_qp).toFixed(0);
     $('speed').textContent=s.average_speed?Number(s.average_speed).toFixed(1)+'×':'—';
     $('readiness').textContent=s.readiness||'—';
-    $('feedStatus').textContent='Latest NVENC record: '+dateTime(s.latest_finish_time)+' · '+Number(s.nvenc_records||0).toLocaleString()+' successful NVENC records in Metrics Plus';
+    $('feedStatus').textContent='Latest NVENC record: '+dateTime(s.latest_finish_time)+' · '+Number(s.nvenc_records||0).toLocaleString()+' successful NVENC records · '+Number(s.reference_ready||0).toLocaleString()+' pre-encode reference captures ready';
     $('refreshStamp').textContent='Refreshed '+new Date().toLocaleTimeString();
     if(showNotice)notice('Adaptive data refreshed. Latest NVENC record: '+dateTime(s.latest_finish_time)+'.');
     const target=Number(s.minimum_training_records||10),complete=Number(s.complete_records||0);
@@ -231,7 +236,7 @@ async function load(showNotice){
 
     const items=d.candidates||[];
     $('rows').innerHTML=items.length?items.map(x=>'<tr data-id="'+esc(x.id)+'" title="Click to build sample-test plan">'+
-      '<td class="file">'+esc(x.file_name||'Unknown')+'<div class="sub">'+esc(x.library_name||'')+'</div></td>'+
+      '<td class="file">'+esc(x.file_name||'Unknown')+'<div class="sub">'+esc(x.library_name||'')+'</div>'+(x.reference_ready?'<span class="ref-badge">REFERENCE READY · '+esc(x.reference_clip_count||0)+' CLIPS</span>':'')+'</td>'+
       '<td class="status '+statusClass(x.diagnosis)+'">'+esc(x.diagnosis)+'</td>'+
       '<td>'+pct(x.percent_saved)+'<div class="sub">'+bytes(x.source_size)+' → '+bytes(x.dest_size)+'</div></td>'+
       '<td>'+bitrate(x.source_video_bitrate)+' → '+bitrate(x.dest_video_bitrate)+'</td>'+
@@ -261,14 +266,18 @@ async function openSamplePlan(id){
     const rec=d.record||{},check=d.source_check||{},plan=d.plan||{};
     $('planTitle').textContent=rec.file_name||'Sample-test plan';
     $('planSubtitle').textContent=(rec.diagnosis||'')+(rec.reason?' · '+rec.reason:'');
-    $('sourceCheck').innerHTML='<strong class="'+(check.original_available?'source-ok':'source-no')+'">'+(check.original_available?'Original source appears available':'Original source not safely available')+'</strong><div class="sub">'+esc(check.message||'')+'</div>';
+    const referenceAvailable=!!check.reference_capture_available;
+    const sourceReady=referenceAvailable||!!check.original_available;
+    const sourceLabel=referenceAvailable?'Pre-encode reference capture available':(check.original_available?'Original source appears available':'No safe calibration reference available');
+    $('sourceCheck').innerHTML='<strong class="'+(sourceReady?'source-ok':'source-no')+'">'+sourceLabel+'</strong><div class="sub">'+esc(check.message||'')+'</div>';
     $('planGrid').innerHTML=[
       ['Current QP',rec.encoder_quality??'—'],
       ['Diagnosis',rec.diagnosis||'—'],
       ['Sample length',humanTime(plan.sample_length)],
       ['Test variants',Number(plan.encode_variants||0).toLocaleString()],
       ['Estimated NVENC time',humanTime(plan.estimated_nvenc_seconds)],
-      ['Quality metrics',(plan.quality_metrics||[]).join(' + ')||'—']
+      ['Quality metrics',(plan.quality_metrics||[]).join(' + ')||'—'],
+      ['Reference mode',plan.mode==='captured_reference'?'Pre-encode clips':(check.original_available?'Live original':'Unavailable')]
     ].map(function(x){return'<div class="plan-card"><span class="label">'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong></div>'}).join('');
     $('sampleTimes').innerHTML=(plan.sample_starts||[]).map(function(v){return'<span class="pill">'+timecode(v)+' → '+timecode(Number(v)+Number(plan.sample_length||0))+'</span>'}).join('')||'<span class="muted">No safe sample positions available.</span>';
     $('qpValues').innerHTML=(plan.qp_values||[]).map(function(v){return'<span class="pill">QP '+esc(v)+'</span>'}).join('');
@@ -276,7 +285,7 @@ async function openSamplePlan(id){
     currentPlanId=id;
     $('runSampleTest').disabled=!plan.can_execute_safely;
     $('runSampleTest').textContent=plan.can_execute_safely?'Run sample test':'Original required';
-    $('sampleSettingInfo').textContent='Keep sample files: '+(plan.keep_sample_files?'ON':'OFF')+' · Change this in the plugin settings. '+(plan.keep_sample_files?'Encoded calibration clips will be retained for manual inspection.':'Temporary encoded clips will be deleted after scores are recorded.');
+    $('sampleSettingInfo').textContent='Keep sample files: '+(plan.keep_sample_files?'ON':'OFF')+' · '+(referenceAvailable?'This test will use source clips captured before the full transcode. ':'')+(plan.keep_sample_files?'Calibration outputs/references will be retained for manual inspection.':'Temporary encoded test clips are deleted after scores are recorded; captured references are consumed after a successful test.');
     $('sampleProgress').classList.remove('show');
     $('sampleResults').classList.remove('show');
     $('sampleResultRows').innerHTML='';
