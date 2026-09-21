@@ -34,6 +34,8 @@ jobs:
 
           cp dist/repo.json /tmp/unmanic-repo/repo.json
           cp dist/repo.json.md5 /tmp/unmanic-repo/repo.json.md5
+          cp dist/repo-v2.json /tmp/unmanic-repo/repo-v2.json
+          cp dist/repo-v2.json.md5 /tmp/unmanic-repo/repo-v2.json.md5
 
           for plugin_dir in dist/*/; do
             plugin_name="$(basename "$plugin_dir")"
