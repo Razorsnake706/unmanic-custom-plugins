@@ -7,7 +7,7 @@ The project currently contains two separate but cooperating plugins:
 | Plugin | Purpose | Current role |
 | --- | --- | --- |
 | **File Size Metrics Plus** | Records detailed before/after processing telemetry and provides a searchable history dashboard. | Data collection, history, diagnostics, export |
-| **Adaptive NVENC Optimizer** | Reads Metrics Plus history and learns how well NVENC performs on different media. | Read-only learning/analysis; automatic tuning is under development |
+| **Adaptive NVENC Optimizer** | Captures pre-encode references, reads Metrics Plus history, and measures NVENC quality/efficiency. | Pre-encode reference capture + manual GPU calibration; automatic tuning is under development |
 
 The long-term goal is to let Unmanic automatically decide **whether a file is worth encoding and how aggressively the GPU should encode it**, without requiring a fixed quality setting for every show or movie.
 
@@ -44,7 +44,8 @@ Adaptive NVENC Optimizer
   • baseline learning
   • compression diagnosis
   • candidate ranking
-  • future XPSNR/SSIM sample tests
+  • pre-encode reference capture
+  • manual XPSNR/SSIM sample tests
   • future dynamic QP selection
         │
         ▼
@@ -55,15 +56,13 @@ Future automated GPU encode decision
 
 ## Current project status
 
-Adaptive NVENC Optimizer is currently in **Phase 1: Learning Mode**. It does not modify media files or encoder settings. It reads successful NVENC records from Metrics Plus and classifies results such as:
+Adaptive NVENC Optimizer is currently in the **pre-encode reference capture + manual calibration** phase.
 
-- **Good compression** — video and total size fell strongly.
-- **Audio-limited** — video compressed well, but copied audio now dominates the output size.
-- **Already efficient** — source bitrate is already low for its resolution/frame rate.
-- **Worth profiling** — likely useful for future sample tests.
-- **Needs more data** — the encode predates newer telemetry fields.
+When enabled in a GPU video library **before Transcode Video Files**, Adaptive stream-copies a few short video-only sections from the untouched source. The normal Unmanic HEVC/NVENC encode then continues exactly as before. Those small reference clips survive long enough for the optimizer to run manual QP tests and calculate XPSNR/SSIM even though the full original file has already been replaced.
 
-The planned next phases add automated representative clip selection, GPU sample encodes at multiple QP values, XPSNR/SSIM quality scoring, calibration against a chosen visual-quality threshold, storage-ROI checks, and eventually automatic per-file NVENC settings.
+The optimizer still does **not** automatically choose or change the full-file QP. The next major milestone is converting the saved calibration results into a trustworthy quality threshold and then using that threshold to make bounded per-file QP decisions.
+
+For normal operation, **Keep calibration/test sample files can stay OFF**. Temporary reference/test clips are cleaned up after successful calibration or when retention/cache limits are reached, while numerical calibration results remain in the optimizer database.
 
 ## Documentation / project wiki
 
