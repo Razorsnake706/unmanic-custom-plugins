@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9
+
+- Expanded Metrics Plus into the data-collection foundation for the planned adaptive NVENC optimizer.
+- New jobs now record source/output duration, effective total bitrate, video bitrate when available/estimable, audio bitrate, FPS, bit depth, container, HDR flag, color metadata, audio stream count, and subtitle stream count.
+- Added full source/output probe JSON for future diagnostics and model training without needing another database migration for every FFprobe field.
+- Added worker-runner and actual FFmpeg command capture from Unmanic's worker completion log.
+- Added structured encoder metadata extracted from the real FFmpeg command, including encoder, rate-control mode, QP/CQ value, preset, tune, profile, lookahead, spatial/temporal AQ, AQ strength, and hardware decode mode.
+- Existing Metrics Plus databases are upgraded in place; historical rows are preserved and simply have blank values for fields that were not recorded at the time.
+- The per-file details page now shows the new adaptive-encoding diagnostics and the captured encoder command.
+- CSV export now includes the new diagnostic fields.
+- No encoding behavior is changed in this release; this phase is observation-only so we can collect trustworthy baseline data before enabling automatic quality decisions.
+
 ## 0.1.8
 
 - Added an **Update plugin** button directly to the File Size Metrics Plus page.
