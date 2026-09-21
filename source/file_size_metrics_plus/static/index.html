@@ -160,7 +160,19 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 
 <script>
 const $=id=>document.getElementById(id);
-const DEFAULT_WIDTHS={finish_time:150,file_name:300,library_name:120,status:80,source_codec:70,dest_codec:70,size:200,bytes_saved:95,percent_saved:65,duration:80,worker:85};
+const DEFAULT_WIDTHS={finish_time:150,file_name:300,library_name:120,status:80,source_codec:70,dest_codec:70,size:200,bytes_saved:95,percent_saved:65,duration:80,worker:100,source_folder:260,dest_folder:260};
+const COLUMN_DEFS=[
+  ['finish_time','Finished'],['file_name','File'],['library_name','Library'],['status','Status'],
+  ['source_codec','Input codec'],['dest_codec','Output codec'],['size','Before → After'],
+  ['bytes_saved','Space saved'],['percent_saved','% saved'],['duration','Processing time'],
+  ['worker','Worker'],['source_folder','Source folder'],['dest_folder','Destination folder']
+];
+const COLUMN_PRESETS={
+  default:['finish_time','file_name','library_name','status','source_codec','dest_codec','size','bytes_saved','percent_saved','duration','worker'],
+  space:['file_name','source_codec','dest_codec','size','bytes_saved','percent_saved'],
+  paths:['file_name','source_folder','dest_folder','bytes_saved','percent_saved'],
+  all:COLUMN_DEFS.map(function(x){return x[0]})
+};
 let state={page:1,pages:1,sort:'finish_time',dir:'desc'};
 
 const humanBytes=v=>{
@@ -177,6 +189,34 @@ const humanTime=v=>{
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=v=>v?new Date(Number(v)*1000).toLocaleString():'—';
 const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
+const folderPath=v=>{
+  if(!v)return'—';
+  const s=String(v).replace(/\\/g,'/');
+  const i=s.lastIndexOf('/');
+  return i>0?s.slice(0,i):s
+};
+function comparisonMarkup(before,after){
+  const b=Number(before),a=Number(after);
+  if(!Number.isFinite(b)&&!Number.isFinite(a))return'<div class="muted">No size data available.</div>';
+  const max=Math.max(Number.isFinite(b)?b:0,Number.isFinite(a)?a:0,1);
+  const bw=Number.isFinite(b)?Math.max(2,b/max*100):0;
+  const aw=Number.isFinite(a)?Math.max(2,a/max*100):0;
+  const grew=Number.isFinite(b)&&Number.isFinite(a)&&a>b;
+  const change=(Number.isFinite(b)&&b>0&&Number.isFinite(a))?((b-a)/b*100):null;
+  const title=change===null?'Size comparison':(Math.abs(change).toFixed(1)+'% '+(change>=0?'decrease':'increase'));
+  return '<div class="chart-title"><strong>'+esc(title)+'</strong><span class="muted">'+esc(humanBytes((Number.isFinite(b)&&Number.isFinite(a))?b-a:null))+' saved</span></div>'+
+    '<div class="compare-row"><div class="compare-label">Before</div><div class="compare-value">'+esc(humanBytes(before))+'</div><div class="compare-track"><div class="compare-fill compare-before" style="width:'+bw+'%"></div></div></div>'+
+    '<div class="compare-row"><div class="compare-label">After</div><div class="compare-value">'+esc(humanBytes(after))+'</div><div class="compare-track"><div class="compare-fill '+(grew?'compare-grow':'compare-after')+'" style="width:'+aw+'%"></div></div></div>'
+}
+function updateTotalChart(s){
+  const before=Number(s.source||0),after=Number(s.dest||0),max=Math.max(before,after,1);
+  $('totalBeforeVal').textContent=humanBytes(before);$('totalAfterVal').textContent=humanBytes(after);
+  $('totalBeforeBar').style.width=Math.max(2,before/max*100)+'%';
+  $('totalAfterBar').style.width=Math.max(2,after/max*100)+'%';
+  $('totalAfterBar').className='compare-fill '+(after>before?'compare-grow':'compare-after');
+  const change=before?((before-after)/before*100):0;
+  $('totalChangeText').textContent=humanBytes(Math.abs(before-after))+' '+(after<=before?'saved':'added')+' · '+Math.abs(change).toFixed(1)+'% '+(after<=before?'decrease':'increase')
+}
 
 function base(){return location.pathname.replace(/\/$/,'')+'/'}
 function qs(extra={}){
