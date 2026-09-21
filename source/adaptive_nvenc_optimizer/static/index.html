@@ -8,7 +8,7 @@
 :root{color-scheme:light dark;--bg:#f5f7fa;--panel:#fff;--panel2:#f0f3f7;--text:#182230;--muted:#64748b;--border:#d9e0e8;--accent:#0ea5e9;--good:#15803d;--warn:#b45309;--bad:#b42318}
 @media(prefers-color-scheme:dark){:root{--bg:#111820;--panel:#18222e;--panel2:#202b37;--text:#f4f7fb;--muted:#a9b7c6;--border:#324152;--accent:#18a9eb;--good:#4ade80;--warn:#fbbf24;--bad:#fb7185}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.wrap{padding:18px;max-width:1700px;margin:auto}
-header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}h1{font-size:22px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:700}.btn:hover{filter:brightness(1.08)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:14px}h1{font-size:22px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:3px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 11px;cursor:pointer;font-weight:700}.btn:hover{filter:brightness(1.08)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}.select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:7px;padding:8px 10px;font-weight:700}
 .notice{display:none;padding:9px 12px;border-radius:7px;background:#17304a;color:#dcefff;margin-bottom:12px}.notice.show{display:block}
 .banner{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.badge{display:inline-flex;padding:3px 8px;border-radius:99px;background:var(--panel2);font-size:11px;font-weight:800}.learning{background:#3b2f0d;color:#ffd66e}
 .grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:10px;margin-bottom:12px}.card{border:1px solid var(--border);background:var(--panel);border-radius:10px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:21px;font-weight:850;margin-top:3px}.tiny{font-size:11px;color:var(--muted);margin-top:4px}
@@ -22,7 +22,7 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <body>
 <div class="wrap">
 <header>
-  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.2.0</div></div>
+  <div><h1>Adaptive NVENC Optimizer</h1><div class="sub">GPU-first adaptive quality tuning · v0.2.1</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh data</button><button id="updatePlugin" class="btn primary">Update plugin</button></div>
 </header>
 <div id="notice" class="notice"></div>
@@ -30,6 +30,11 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 <div class="banner">
   <div><strong>Phase 2: Manual GPU calibration testing</strong><div class="sub">Historical analysis plus opt-in P1000 sample tests. Full media files and normal encoder settings are still never modified by this panel.</div></div>
   <span class="badge learning">MANUAL TEST ONLY</span>
+</div>
+
+<div class="banner" style="padding:9px 13px">
+  <div><strong>Metrics Plus feed</strong><div id="feedStatus" class="sub">Loading latest database state…</div></div>
+  <span id="refreshStamp" class="badge">Not refreshed yet</span>
 </div>
 
 <div class="grid">
@@ -59,7 +64,18 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
   <div class="sub">Rows are ranked by how useful they may be for future adaptive sample testing. Click a row to build a safe sample-test plan. No samples are encoded yet.</div>
 </div>
 
-<div class="table-tools"><div class="sub">Drag column dividers to resize. Widths are saved in this browser.</div><button id="resetCols" class="btn">Reset column widths</button></div>
+<div class="table-tools">
+  <div class="sub">Drag column dividers to resize. Widths are saved in this browser.</div>
+  <div class="actions">
+    <label class="sub">Advisor order
+      <select id="advisorSort" class="select">
+        <option value="newest">Newest first</option>
+        <option value="priority">Best test candidates</option>
+      </select>
+    </label>
+    <button id="resetCols" class="btn">Reset column widths</button>
+  </div>
+</div>
 <div class="table-wrap" id="advisorWrap">
 <table>
 <colgroup>
@@ -107,13 +123,15 @@ dialog{border:0;border-radius:12px;max-width:880px;width:92%;padding:0;backgroun
 
 <script>
 const PLUGIN_ID='adaptive_nvenc_optimizer';
-const PLUGIN_VERSION='0.2.0';
+const PLUGIN_VERSION='0.2.1';
 const $=id=>document.getElementById(id);
 const COLUMN_WIDTH_KEY='adaptiveNvenc.columnWidths';
 const DEFAULT_WIDTHS={file:470,diagnosis:150,saved:135,video_bitrate:180,video_reduction:120,audio_share:100,qp:60,preset:70,speed:80,data:80,why:355};
 let currentPlan=null;
 let currentPlanId=null;
 let samplePollTimer=null;
+const SORT_KEY='adaptiveNvenc.advisorSort';
+let advisorSort=localStorage.getItem(SORT_KEY)||'newest';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
 const bitrate=v=>{if(v===null||v===undefined)return'—';const n=Number(v);return n>=1e6?(n/1e6).toFixed(2)+' Mbps':(n/1e3).toFixed(0)+' kbps'};
@@ -122,6 +140,11 @@ function base(){const p=location.pathname.replace(/\/$/,'');return p+'/'}
 function notice(msg){$('notice').textContent=msg;$('notice').classList.add('show');setTimeout(()=>$('notice').classList.remove('show'),7000)}
 function compareVersions(a,b){const x=String(a||'').split('.').map(Number),y=String(b||'').split('.').map(Number);for(let i=0;i<Math.max(x.length,y.length);i++){if((x[i]||0)>(y[i]||0))return 1;if((x[i]||0)<(y[i]||0))return-1}return 0}
 async function readJsonResponse(r){const t=await r.text();if(!t)return{};try{return JSON.parse(t)}catch(e){return{success:false,_raw:t}}}
+
+function dateTime(v){
+  if(v===null||v===undefined||!Number(v))return'—';
+  return new Date(Number(v)*1000).toLocaleString()
+}
 
 function timecode(seconds){
   if(seconds===null||seconds===undefined)return'—';
@@ -177,9 +200,13 @@ function setupResizers(){
 
 function statusClass(s){if(s==='Good compression'||s==='Already efficient')return'good';if(s==='Sample-test candidate')return'bad';return'warn'}
 
-async function load(){
+async function load(showNotice){
+  const refreshBtn=$('refresh'),oldText=refreshBtn.textContent;
+  refreshBtn.disabled=true;
+  refreshBtn.textContent='Refreshing…';
   try{
-    const r=await fetch(base()+'overview?limit=150&_='+Date.now(),{cache:'no-store'});
+    const params=new URLSearchParams({limit:'150',sort:advisorSort,_:String(Date.now())});
+    const r=await fetch(base()+'overview?'+params.toString(),{cache:'no-store'});
     const d=await r.json();
     if(!d.success){
       $('rows').innerHTML='<tr><td colspan="11" class="empty">'+esc(d.message||'Metrics Plus data unavailable')+'</td></tr>';
@@ -193,6 +220,9 @@ async function load(){
     $('qp').textContent=s.median_qp===null||s.median_qp===undefined?'—':Number(s.median_qp).toFixed(0);
     $('speed').textContent=s.average_speed?Number(s.average_speed).toFixed(1)+'×':'—';
     $('readiness').textContent=s.readiness||'—';
+    $('feedStatus').textContent='Latest NVENC record: '+dateTime(s.latest_finish_time)+' · '+Number(s.nvenc_records||0).toLocaleString()+' successful NVENC records in Metrics Plus';
+    $('refreshStamp').textContent='Refreshed '+new Date().toLocaleTimeString();
+    if(showNotice)notice('Adaptive data refreshed. Latest NVENC record: '+dateTime(s.latest_finish_time)+'.');
     const target=Number(s.minimum_training_records||10),complete=Number(s.complete_records||0);
     $('readinessBar').style.width=Math.min(100,complete/target*100)+'%';
     $('readinessText').textContent=complete+' / '+target+' baseline records collected'+(complete>=target?' · ready to begin calibration work':'');
@@ -214,7 +244,13 @@ async function load(){
       '<td class="reason">'+esc(x.reason||'')+'</td>'+
     '</tr>').join(''):'<tr><td colspan="11" class="empty">No NVENC records with adaptive metrics yet.</td></tr>';
     document.querySelectorAll('tbody tr[data-id]').forEach(function(tr){tr.onclick=function(){openSamplePlan(tr.dataset.id)}});
-  }catch(e){notice('Unable to load advisor data: '+e.message)}
+  }catch(e){
+    $('feedStatus').textContent='Refresh failed: '+e.message;
+    notice('Unable to load advisor data: '+e.message)
+  }finally{
+    refreshBtn.disabled=false;
+    refreshBtn.textContent=oldText
+  }
 }
 
 async function openSamplePlan(id){
@@ -404,14 +440,16 @@ async function updatePlugin(){
   }
 }
 
-$('refresh').onclick=load;
+$('advisorSort').value=advisorSort;
+$('advisorSort').onchange=function(){advisorSort=this.value;localStorage.setItem(SORT_KEY,advisorSort);load(false)};
+$('refresh').onclick=function(){load(true)};
 $('updatePlugin').onclick=updatePlugin;
 $('runSampleTest').onclick=startSampleTest;
 $('closePlan').onclick=function(){$('planDialog').close()};
 $('planDialog').onclick=function(e){if(e.target===$('planDialog'))$('planDialog').close()};
 loadColumnWidths();
 setupResizers();
-load();
+load(false);
 </script>
 </body>
 </html>
