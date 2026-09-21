@@ -8,10 +8,14 @@ import json
 import os
 import sqlite3
 import subprocess
+import time
 import uuid
+
+import requests
 
 from unmanic.libs.library import Library
 from unmanic.libs.logs import UnmanicLogging
+from unmanic.libs.plugins import PluginsHandler
 from unmanic.libs.unplugins.settings import PluginSettings
 
 PLUGIN_ID = "file_size_metrics_plus"
@@ -25,6 +29,9 @@ class Settings(PluginSettings):
 settings = Settings()
 PROFILE = settings.get_profile_directory()
 DB_PATH = os.path.join(PROFILE, "metrics_plus.db")
+CUSTOM_REPO_MATCH = "Razorsnake706/unmanic-custom-plugins"
+_REPO_REFRESH_INTERVAL = 300
+_last_direct_repo_refresh = 0.0
 
 
 def _db():
@@ -698,9 +705,72 @@ def _csv(arguments):
     return out.getvalue()
 
 
+def _refresh_custom_repo_cache_direct(force=False):
+    """Refresh this custom repo directly from GitHub.
+
+    Unmanic normally proxies repository metadata through the Unmanic API before
+    writing its local repo cache. That proxy can serve stale metadata for custom
+    repositories. Once this plugin is installed, bypass that proxy for this
+    repository and replace only its local cache with the current raw GitHub JSON.
+    """
+    global _last_direct_repo_refresh
+
+    now = time.time()
+    if not force and (now - _last_direct_repo_refresh) < _REPO_REFRESH_INTERVAL:
+        return {"success": True, "skipped": True}
+
+    handler = PluginsHandler()
+    matching = []
+    for repo in handler.get_plugin_repos():
+        path = str(repo.get("path") or "")
+        if CUSTOM_REPO_MATCH.lower() in path.lower():
+            matching.append(path)
+
+    if not matching:
+        return {"success": False, "message": "Custom repository is not configured in Unmanic."}
+
+    updated = []
+    for repo_path in matching:
+        separator = "&" if "?" in repo_path else "?"
+        fetch_url = "{}{}fsmplus_cache_bust={}".format(repo_path, separator, int(now))
+        response = requests.get(
+            fetch_url,
+            timeout=15,
+            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+        )
+        response.raise_for_status()
+        repo_data = response.json()
+
+        plugins = repo_data.get("plugins") or []
+        plugin_entry = next((p for p in plugins if p.get("id") == PLUGIN_ID), None)
+        if not plugin_entry:
+            raise RuntimeError("Repository JSON does not contain {}.".format(PLUGIN_ID))
+
+        repo_id = handler.get_plugin_repo_id(repo_path)
+        cache_file = handler.get_repo_cache_file(repo_id)
+        tmp_file = cache_file + ".fsmplus.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as fh:
+            json.dump(repo_data, fh, indent=4)
+        os.replace(tmp_file, cache_file)
+        updated.append({
+            "repo": repo_path,
+            "cache_file": cache_file,
+            "version": plugin_entry.get("version"),
+        })
+
+    _last_direct_repo_refresh = now
+    return {"success": True, "updated": updated}
+
+
 def render_frontend_panel(data):
     path = str(data.get("path") or "").strip("/")
     args = data.get("arguments") or {}
+
+    if path == "":
+        try:
+            _refresh_custom_repo_cache_direct()
+        except Exception:
+            logger.exception("Direct custom repository refresh failed.")
     if path == "list":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_list_data(args), default=str)
@@ -726,6 +796,15 @@ def render_frontend_panel(data):
     if path == "importLegacy":
         data["content_type"] = "application/json"
         data["content"] = json.dumps(_import_legacy())
+        return data
+    if path == "refreshRepo":
+        try:
+            result = _refresh_custom_repo_cache_direct(force=True)
+        except Exception as exc:
+            logger.exception("Direct custom repository refresh failed.")
+            result = {"success": False, "message": str(exc)}
+        data["content_type"] = "application/json"
+        data["content"] = json.dumps(result, default=str)
         return data
     if path == "delete":
         data["content_type"] = "application/json"
