@@ -21,6 +21,9 @@ release_manifest = []
 
 for plugin_dir in sorted(p for p in SRC.iterdir() if p.is_dir()):
     info = json.loads((plugin_dir / "info.json").read_text())
+    plugin_py = plugin_dir / "plugin.py"
+    if plugin_py.exists():
+        compile(plugin_py.read_text(), str(plugin_py), "exec")
     plugin_id = info["id"]
     version = info["version"]
 
