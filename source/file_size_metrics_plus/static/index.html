@@ -71,7 +71,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.2</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -83,6 +83,15 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 <div class="card"><div class="muted">Saved</div><div id="mSaved" class="metric">0 B</div></div>
 <div class="card"><div class="muted">Reduction</div><div id="mPct" class="metric">—</div></div>
 <div class="card"><div class="muted">Processing time</div><div id="mTime" class="metric">0s</div></div>
+</section>
+
+<section class="panel summary-chart">
+  <div class="chart-title">
+    <div><strong>Total File Size Changed</strong><div class="muted">Aggregate before/after sizes for the current filters</div></div>
+    <div id="totalChangeText" class="muted"></div>
+  </div>
+  <div class="compare-row"><div class="compare-label">Before</div><div id="totalBeforeVal" class="compare-value">0 B</div><div class="compare-track"><div id="totalBeforeBar" class="compare-fill compare-before"></div></div></div>
+  <div class="compare-row"><div class="compare-label">After</div><div id="totalAfterVal" class="compare-value">0 B</div><div class="compare-track"><div id="totalAfterBar" class="compare-fill compare-after"></div></div></div>
 </section>
 
 <section class="panel">
@@ -104,12 +113,27 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
     <span><i class="dot before"></i>Before</span><span><i class="dot after"></i>After</span>
     <span>• Click any file row for full details</span><span>• Drag column dividers to resize</span>
   </div>
-  <button id="resetCols" class="btn">Reset column widths</button>
+  <div class="actions">
+    <details id="columnPicker" class="column-picker">
+      <summary class="btn">Columns</summary>
+      <div class="column-menu">
+        <div class="column-presets">
+          <button type="button" class="btn" data-preset="default">Default</button>
+          <button type="button" class="btn" data-preset="space">Space + codecs</button>
+          <button type="button" class="btn" data-preset="paths">Paths</button>
+          <button type="button" class="btn" data-preset="all">All</button>
+        </div>
+        <div class="column-divider"></div>
+        <div id="columnOptions"></div>
+      </div>
+    </details>
+    <button id="resetCols" class="btn">Reset column widths</button>
+  </div>
 </div>
 
 <div class="tablewrap"><table id="metricsTable">
 <colgroup>
-<col data-col="finish_time" style="width:150px"><col data-col="file_name" style="width:300px"><col data-col="library_name" style="width:120px"><col data-col="status" style="width:80px"><col data-col="source_codec" style="width:70px"><col data-col="dest_codec" style="width:70px"><col data-col="size" style="width:200px"><col data-col="bytes_saved" style="width:95px"><col data-col="percent_saved" style="width:65px"><col data-col="duration" style="width:80px"><col data-col="worker" style="width:85px">
+<col data-col="finish_time" style="width:150px"><col data-col="file_name" style="width:300px"><col data-col="library_name" style="width:120px"><col data-col="status" style="width:80px"><col data-col="source_codec" style="width:70px"><col data-col="dest_codec" style="width:70px"><col data-col="size" style="width:200px"><col data-col="bytes_saved" style="width:95px"><col data-col="percent_saved" style="width:65px"><col data-col="duration" style="width:80px"><col data-col="worker" style="width:100px"><col data-col="source_folder" style="width:260px"><col data-col="dest_folder" style="width:260px">
 </colgroup>
 <thead><tr>
 <th data-col="finish_time" data-sort="finish_time">Finished<span class="resize-handle"></span></th>
@@ -123,6 +147,8 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 <th data-col="percent_saved" data-sort="percent_saved">%<span class="resize-handle"></span></th>
 <th data-col="duration" data-sort="duration">Time<span class="resize-handle"></span></th>
 <th data-col="worker" data-sort="worker">Worker<span class="resize-handle"></span></th>
+<th data-col="source_folder">Source folder<span class="resize-handle"></span></th>
+<th data-col="dest_folder">Destination folder<span class="resize-handle"></span></th>
 </tr></thead><tbody id="rows"></tbody>
 </table></div>
 
@@ -130,7 +156,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </section>
 </main>
 
-<dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailGrid" class="grid"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
+<dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailChart" class="detail-chart"></div><div id="detailGrid" class="grid"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
 
 <script>
 const $=id=>document.getElementById(id);
