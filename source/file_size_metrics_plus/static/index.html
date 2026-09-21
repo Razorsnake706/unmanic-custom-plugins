@@ -203,8 +203,10 @@ function comparisonMarkup(before,after){
   const aw=Number.isFinite(a)?Math.max(2,a/max*100):0;
   const grew=Number.isFinite(b)&&Number.isFinite(a)&&a>b;
   const change=(Number.isFinite(b)&&b>0&&Number.isFinite(a))?((b-a)/b*100):null;
+  const diff=(Number.isFinite(b)&&Number.isFinite(a))?b-a:null;
   const title=change===null?'Size comparison':(Math.abs(change).toFixed(1)+'% '+(change>=0?'decrease':'increase'));
-  return '<div class="chart-title"><strong>'+esc(title)+'</strong><span class="muted">'+esc(humanBytes((Number.isFinite(b)&&Number.isFinite(a))?b-a:null))+' saved</span></div>'+
+  const diffText=diff===null?'':(humanBytes(Math.abs(diff))+' '+(diff>=0?'saved':'added'));
+  return '<div class="chart-title"><strong>'+esc(title)+'</strong><span class="muted">'+esc(diffText)+'</span></div>'+
     '<div class="compare-row"><div class="compare-label">Before</div><div class="compare-value">'+esc(humanBytes(before))+'</div><div class="compare-track"><div class="compare-fill compare-before" style="width:'+bw+'%"></div></div></div>'+
     '<div class="compare-row"><div class="compare-label">After</div><div class="compare-value">'+esc(humanBytes(after))+'</div><div class="compare-track"><div class="compare-fill '+(grew?'compare-grow':'compare-after')+'" style="width:'+aw+'%"></div></div></div>'
 }
@@ -409,6 +411,11 @@ $('reset').onclick=()=>{
 $('prev').onclick=()=>{if(state.page>1){state.page--;load()}};
 $('next').onclick=()=>{if(state.page<state.pages){state.page++;load()}};
 $('close').onclick=()=>$('details').close();
+$('details').addEventListener('click',function(e){
+  const box=$('details').querySelector('.dialog').getBoundingClientRect();
+  const outside=e.clientX<box.left||e.clientX>box.right||e.clientY<box.top||e.clientY>box.bottom;
+  if(outside)$('details').close()
+});
 $('resetCols').onclick=()=>{
   localStorage.removeItem('fileSizeMetricsPlus.columnWidths');
   for(const [name,w] of Object.entries(DEFAULT_WIDTHS)){const col=colElement(name);if(col)col.style.width=w+'px'}
@@ -427,6 +434,6 @@ $('export').onclick=async()=>{
   const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='unmanic-file-size-metrics.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
 };
 
-loadColumnWidths();setupResizers();load();
+loadColumnWidths();setupColumnPicker();applyColumnVisibility();setupResizers();refreshPluginRepos();load();
 </script>
 </body></html>
