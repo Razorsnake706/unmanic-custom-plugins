@@ -8,16 +8,18 @@
   font-family:Inter,system-ui,sans-serif;color:#18202a;background:#f4f6f8;
   --panel:#fff;--border:#dce2e8;--soft:#eef2f6;--hover:#f2f7fd;
   --before:#4f8ddf;--after:#36a269;--grow:#d35b5b;--link:#236fca;
+  --text:#18202a;--muted-text:#687586;
 }
 html.dark{
   color:#e7edf4;background:#11161d;--panel:#171e27;--border:#303a46;
   --soft:#202a35;--hover:#1e2b39;--link:#72afff;
+  --text:#e7edf4;--muted-text:#a7b1bd;
 }
 *{box-sizing:border-box}
-body{margin:0;background:inherit;color:inherit}
+body{margin:0;background:inherit;color:var(--text)}
 .wrap{width:100%;max-width:none;margin:0;padding:clamp(12px,2vw,24px)}
 .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:18px}
-.top h1{margin:2px 0 6px;font-size:28px}.muted{opacity:.68}
+.top h1{margin:2px 0 6px;font-size:28px}.muted{color:var(--muted-text)}
 .actions,.filters{display:flex;flex-wrap:wrap;gap:8px}
 .btn,input,select{border:1px solid #c8d0d9;border-radius:7px;padding:8px 10px;background:#fff;color:#17202a}
 .dark .btn,.dark input,.dark select{background:#1a222c;color:#e7edf4;border-color:#394654}
@@ -48,11 +50,15 @@ tbody tr[data-id]:hover .openhint{opacity:1;transform:translateX(2px)}
 .bartrack{height:6px;background:var(--soft);border-radius:999px;overflow:hidden;min-width:32px}
 .barfill{height:100%;border-radius:999px}.bar-before{background:var(--before)}.bar-after{background:var(--after)}.bar-grow{background:var(--grow)}
 .legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:4px}
+.summary-chart{display:grid;gap:12px;margin:14px 0}.chart-title{display:flex;justify-content:space-between;gap:12px;align-items:end}.chart-title strong{font-size:18px}.compare-row{display:grid;grid-template-columns:70px 100px 1fr;align-items:center;gap:10px}.compare-label{font-weight:700}.compare-value{text-align:right;font-variant-numeric:tabular-nums}.compare-track{height:18px;background:var(--soft);border-radius:999px;overflow:hidden}.compare-fill{height:100%;border-radius:999px;min-width:2px}.compare-before{background:var(--before)}.compare-after{background:var(--after)}.compare-grow{background:var(--grow)}
+.column-picker{position:relative}.column-picker summary{list-style:none}.column-picker summary::-webkit-details-marker{display:none}.column-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:290px;max-height:420px;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.column-menu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px}.column-menu label:hover{background:var(--hover)}.column-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.column-presets .btn{padding:5px 7px;font-size:11px}.column-divider{height:1px;background:var(--border);margin:8px 0}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.before{background:var(--before)}.dot.after{background:var(--after)}
 .pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
 .notice{margin:10px 0;padding:10px;border-radius:8px;background:#eaf2ff}.dark .notice{background:#1d314b}.hidden{display:none}
-dialog{border:0;border-radius:12px;max-width:850px;width:90%;padding:0;background:transparent}
-.dialog{background:var(--panel);color:inherit;border-radius:12px;padding:18px;border:1px solid var(--border)}
+dialog{border:0;border-radius:12px;max-width:900px;width:92%;padding:0;background:transparent;color:var(--text)}
+dialog::backdrop{background:rgba(0,0,0,.58)}
+.dialog{background:var(--panel);color:var(--text);border-radius:12px;padding:18px;border:1px solid var(--border);max-height:90vh;overflow:auto}
+.dialog h3,.dialog strong,.dialog span{color:inherit}.detail-chart{margin:12px 0 18px;padding:14px;border:1px solid var(--border);border-radius:10px;background:rgba(128,128,128,.05)}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.grid div{padding:8px;background:rgba(128,128,128,.08);border-radius:7px}
 .grid span{display:block;font-size:12px;opacity:.65}.grid strong{word-break:break-all}
 @media(max-width:1000px){.top{display:block}.actions{margin-top:10px}.filters .search{flex-basis:100%}}
