@@ -2311,6 +2311,177 @@ def _calibration_runs():
     }
 
 
+def _rate_sample_calibration(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    sample_index = _int(_arg(arguments, "sample_index", 0))
+    label = str(_arg(arguments, "label", "") or "").strip().upper()
+    rating = str(_arg(arguments, "rating", "") or "").strip().lower()
+
+    if not run_id or sample_index is None or not label or rating not in _CALIBRATION_RATINGS:
+        return {"success": False, "message": "Invalid per-sample calibration rating request."}
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return {"success": False, "message": "Calibration run was discarded as unsuitable."}
+    if result.get("review_submitted"):
+        return {"success": False, "message": "This calibration review has already been submitted."}
+
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    if label not in candidate_map:
+        return {"success": False, "message": "Calibration candidate was not found."}
+
+    sample_exists = any(
+        int(item.get("sample_index") or -1) == int(sample_index)
+        and int(item.get("qp") or -1) == int(candidate_map[label])
+        for item in (result.get("samples") or [])
+    )
+    if not sample_exists:
+        return {"success": False, "message": "Calibration sample/candidate was not found."}
+
+    now = time.time()
+    with _optimizer_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO calibration_sample_ratings(
+                run_id, sample_index, candidate_label, qp, rating, created, updated
+            ) VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(run_id, sample_index, candidate_label) DO UPDATE SET
+                qp=excluded.qp,
+                rating=excluded.rating,
+                updated=excluded.updated
+            """,
+            (run_id, int(sample_index), label, int(candidate_map[label]), rating, now, now),
+        )
+
+    refreshed = _load_sample_run(run_id)
+    payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {"success": True, "run": payload}
+
+
+def _rate_sample_all_calibration(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    sample_index = _int(_arg(arguments, "sample_index", 0))
+    rating = str(_arg(arguments, "rating", "") or "").strip().lower()
+
+    if not run_id or sample_index is None or rating not in _CALIBRATION_RATINGS:
+        return {"success": False, "message": "Invalid sample bulk-rating request."}
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return {"success": False, "message": "Calibration run was discarded as unsuitable."}
+    if result.get("review_submitted"):
+        return {"success": False, "message": "This calibration review has already been submitted."}
+
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    labels = []
+    for label, qp in candidate_map.items():
+        if any(
+            int(item.get("sample_index") or -1) == int(sample_index)
+            and int(item.get("qp") or -1) == int(qp)
+            for item in (result.get("samples") or [])
+        ):
+            labels.append((label, qp))
+
+    if not labels:
+        return {"success": False, "message": "Calibration sample was not found."}
+
+    now = time.time()
+    with _optimizer_db() as conn:
+        for label, qp in labels:
+            conn.execute(
+                """
+                INSERT INTO calibration_sample_ratings(
+                    run_id, sample_index, candidate_label, qp, rating, created, updated
+                ) VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(run_id, sample_index, candidate_label) DO UPDATE SET
+                    qp=excluded.qp,
+                    rating=excluded.rating,
+                    updated=excluded.updated
+                """,
+                (run_id, int(sample_index), label, int(qp), rating, now, now),
+            )
+
+    refreshed = _load_sample_run(run_id)
+    payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {"success": True, "run": payload}
+
+
+def _submit_calibration_review(arguments):
+    run_id = str(_arg(arguments, "run_id", "") or "").strip()
+    if not run_id:
+        return {"success": False, "message": "Calibration run ID is required."}
+
+    run = _load_sample_run(run_id)
+    if run is None:
+        return {"success": False, "message": "Calibration run was not found."}
+
+    result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return {"success": False, "message": "Calibration run was discarded as unsuitable."}
+    if result.get("review_submitted"):
+        refreshed = _calibration_run_payload(run)
+        return {"success": True, "already_submitted": True, "run": refreshed}
+
+    payload = _calibration_run_payload(run)
+    if not payload:
+        return {"success": False, "message": "Calibration review is no longer available."}
+    if not payload.get("draft_complete"):
+        return {
+            "success": False,
+            "message": "Rate every candidate in every sample before submitting the review.",
+            "rated": payload.get("sample_rating_count") or 0,
+            "required": payload.get("sample_rating_required") or 0,
+        }
+
+    candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
+    sample_indexes = [int(item.get("sample_index")) for item in (payload.get("samples") or [])]
+    sample_map = _sample_rating_map(run_id)
+    aggregated = _aggregate_sample_ratings(candidate_map, sample_indexes, sample_map)
+
+    if not aggregated or any(value is None for value in aggregated.values()):
+        return {"success": False, "message": "Unable to aggregate all per-sample ratings."}
+
+    now = time.time()
+    with _optimizer_db() as conn:
+        for label, qp in candidate_map.items():
+            conn.execute(
+                """
+                INSERT INTO calibration_ratings(
+                    run_id, candidate_label, qp, rating, created, updated
+                ) VALUES(?,?,?,?,?,?)
+                ON CONFLICT(run_id, candidate_label) DO UPDATE SET
+                    qp=excluded.qp,
+                    rating=excluded.rating,
+                    updated=excluded.updated
+                """,
+                (run_id, label, int(qp), aggregated[label], now, now),
+            )
+
+    result["review_submitted"] = True
+    result["review_submitted_at"] = now
+    result["review_rating_mode"] = "per_sample_worst_case"
+    result["review_sample_rating_count"] = int(payload.get("sample_rating_count") or 0)
+    _save_sample_run_result(run_id, result)
+
+    quality = _schedule_deferred_quality(run_id)
+    refreshed = _load_sample_run(run_id)
+    refreshed_payload = _calibration_run_payload(refreshed) if refreshed else None
+    return {
+        "success": True,
+        "run": refreshed_payload,
+        "quality": quality,
+        "aggregate_ratings": aggregated,
+    }
+
+
 def _rate_all_calibration(arguments):
     run_id = str(_arg(arguments, "run_id", "") or "").strip()
     rating = str(_arg(arguments, "rating", "") or "").strip().lower()
