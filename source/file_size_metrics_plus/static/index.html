@@ -53,6 +53,7 @@ tbody tr[data-id]:hover .openhint{opacity:1;transform:translateX(2px)}
 .legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:4px}
 .summary-chart{display:grid;gap:12px;margin:14px 0}.chart-title{display:flex;justify-content:space-between;gap:12px;align-items:end}.chart-title strong{font-size:18px}.compare-row{display:grid;grid-template-columns:70px 100px 1fr;align-items:center;gap:10px}.compare-label{font-weight:700}.compare-value{text-align:right;font-variant-numeric:tabular-nums}.compare-track{height:18px;background:var(--soft);border-radius:999px;overflow:hidden}.compare-fill{height:100%;border-radius:999px;min-width:2px}.compare-before{background:var(--before)}.compare-after{background:var(--after)}.compare-grow{background:var(--grow)}
 .column-picker{position:relative}.column-picker summary{list-style:none}.column-picker summary::-webkit-details-marker{display:none}.column-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:290px;max-height:420px;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.column-menu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px}.column-menu label:hover{background:var(--hover)}.column-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.column-presets .btn{padding:5px 7px;font-size:11px}.column-divider{height:1px;background:var(--border);margin:8px 0}
+.quick-menu{width:330px}.quick-note{font-size:11px;color:var(--muted-text);line-height:1.35;margin-bottom:9px}.quick-section{display:grid;gap:5px;margin:8px 0 12px}.quick-section-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-text);margin-bottom:2px}.quick-option{width:100%;text-align:left;padding:6px 8px;font-size:12px}.quick-empty{font-size:11px;color:var(--muted-text);padding:3px 0}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.before{background:var(--before)}.dot.after{background:var(--after)}
 .pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
 .notice{margin:10px 0;padding:10px;border-radius:8px;background:#eaf2ff}.dark .notice{background:#1d314b}.hidden{display:none}
@@ -73,7 +74,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.6</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.7</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="checkUpdates" class="btn">Check plugin updates</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -119,6 +120,13 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
     <div class="selection-tools">
       <span id="selectedCount" class="muted">0 selected</span>
       <button id="selectAllMatching" class="btn" type="button" disabled>Select all matching</button>
+      <details id="quickSelect" class="column-picker">
+        <summary class="btn">Quick select</summary>
+        <div class="column-menu quick-menu">
+          <div class="quick-note">Adds entries to the current selection. Active filters are preserved; choosing a library, worker, codec, status, or size group replaces only that same filter for the selection.</div>
+          <div id="quickSelectOptions"></div>
+        </div>
+      </details>
       <button id="clearSelected" class="btn" type="button" disabled>Clear selection</button>
       <button id="deleteSelected" class="btn danger" type="button" disabled>Delete selected</button>
     </div>
@@ -187,6 +195,7 @@ const selectedIds=new Set();
 let currentPageIds=[];
 let loadSequence=0;
 let filterTimer=null;
+let latestOptions={libraries:[],codecs:[],workers:[]};
 
 const humanBytes=v=>{
   if(v===null||v===undefined)return'—';
@@ -278,10 +287,12 @@ async function load(){
     state.total=Number(d.total||0);
     currentPageIds=(d.items||[]).map(function(x){return String(x.id)});
 
-    syncSelect($('library'),d.options?.libraries||[],'All libraries','id');
-    syncSelect($('srcCodec'),d.options?.codecs||[],'All input codecs');
-    syncSelect($('dstCodec'),d.options?.codecs||[],'All output codecs');
-    syncSelect($('worker'),d.options?.workers||[],'All workers');
+    latestOptions=d.options||{libraries:[],codecs:[],workers:[]};
+    syncSelect($('library'),latestOptions.libraries||[],'All libraries','id');
+    syncSelect($('srcCodec'),latestOptions.codecs||[],'All input codecs');
+    syncSelect($('dstCodec'),latestOptions.codecs||[],'All output codecs');
+    syncSelect($('worker'),latestOptions.workers||[],'All workers');
+    renderQuickSelect(latestOptions);
 
     const s=d.summary||{};
     $('mCountLabel').textContent='Processing tasks';
@@ -437,8 +448,63 @@ function setupColumnPicker(){
     btn.onclick=function(){setVisibleColumns((COLUMN_PRESETS[btn.dataset.preset]||COLUMN_PRESETS.default).slice())}
   });
   document.addEventListener('click',function(e){
-    const picker=$('columnPicker');if(picker.open&&!picker.contains(e.target))picker.removeAttribute('open')
+    ['columnPicker','quickSelect'].forEach(function(id){
+      const picker=$(id);if(picker&&picker.open&&!picker.contains(e.target))picker.removeAttribute('open')
+    })
   })
+}
+function quickSection(title,items){
+  if(!items.length)return '';
+  return '<div class="quick-section"><div class="quick-section-title">'+esc(title)+'</div>'+
+    items.map(function(item){
+      return '<button type="button" class="btn quick-option" data-quick-mode="'+esc(item.mode)+'" data-quick-value="'+esc(item.value||'')+'" data-quick-label="'+esc(item.label)+'">'+esc(item.label)+'</button>'
+    }).join('')+'</div>'
+}
+function renderQuickSelect(options){
+  const common=[
+    {mode:'legacy',label:'Legacy / imported entries'},
+    {mode:'status_failed',label:'Failed entries'},
+    {mode:'status_success',label:'Successful entries'},
+    {mode:'size_saved',label:'Files that became smaller'},
+    {mode:'size_grew',label:'Files that became larger'},
+    {mode:'size_same',label:'Files with no size change'}
+  ];
+  const libraries=(options.libraries||[]).map(function(x){return {mode:'library',value:String(x.id),label:x.name||('Library '+x.id)}});
+  const workers=(options.workers||[]).map(function(x){return {mode:'worker',value:String(x),label:String(x)}});
+  const inputCodecs=(options.codecs||[]).map(function(x){return {mode:'source_codec',value:String(x),label:String(x)}});
+  const outputCodecs=(options.codecs||[]).map(function(x){return {mode:'dest_codec',value:String(x),label:String(x)}});
+
+  $('quickSelectOptions').innerHTML=
+    quickSection('Common',common)+
+    quickSection('Libraries',libraries)+
+    quickSection('Workers',workers)+
+    quickSection('Input codecs',inputCodecs)+
+    quickSection('Output codecs',outputCodecs);
+
+  document.querySelectorAll('[data-quick-mode]').forEach(function(btn){
+    btn.onclick=function(){
+      addMatchingSelection(btn.dataset.quickMode,btn.dataset.quickValue||'',btn.dataset.quickLabel||'matching entries')
+    }
+  })
+}
+async function addMatchingSelection(mode,value,label){
+  const picker=$('quickSelect');
+  if(picker)picker.removeAttribute('open');
+  try{
+    const r=await fetch(base()+'matchingIds?'+qs({selection:mode||'all',selection_value:value||''}),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to fetch matching entries');
+    (d.ids||[]).forEach(function(id){selectedIds.add(String(id))});
+    document.querySelectorAll('.rowSelect').forEach(function(box){
+      const checked=selectedIds.has(String(box.dataset.selectId));
+      box.checked=checked;
+      const tr=box.closest('tr');if(tr)tr.classList.toggle('row-selected',checked)
+    });
+    updateSelectionUi();
+    notice('Added '+Number(d.count||0).toLocaleString()+' '+label+' to the selection.')
+  }catch(e){
+    notice('Unable to select '+label+': '+e.message)
+  }
 }
 async function refreshPluginRepos(showNotice){
   try{
@@ -514,23 +580,9 @@ $('selectAllMatching').onclick=async function(){
   $('selectAllMatching').disabled=true;
   const oldText=$('selectAllMatching').textContent;
   $('selectAllMatching').textContent='Selecting...';
-  try{
-    const r=await fetch(base()+'matchingIds?'+qs(),{cache:'no-store'});
-    const d=await r.json();
-    if(!d.success)throw new Error(d.message||'Unable to fetch matching entries');
-    (d.ids||[]).forEach(function(id){selectedIds.add(String(id))});
-    document.querySelectorAll('.rowSelect').forEach(function(box){
-      const checked=selectedIds.has(String(box.dataset.selectId));
-      box.checked=checked;
-      const tr=box.closest('tr');if(tr)tr.classList.toggle('row-selected',checked)
-    });
-    notice('Selected '+Number(d.count||0).toLocaleString()+' matching entr'+(Number(d.count||0)===1?'y':'ies')+'.');
-  }catch(e){
-    notice('Unable to select all matching entries: '+e.message)
-  }finally{
-    $('selectAllMatching').textContent=oldText;
-    updateSelectionUi()
-  }
+  await addMatchingSelection('all','','matching entries');
+  $('selectAllMatching').textContent=oldText;
+  updateSelectionUi()
 };
 $('deleteSelected').onclick=async function(){
   if(!selectedIds.size)return;
