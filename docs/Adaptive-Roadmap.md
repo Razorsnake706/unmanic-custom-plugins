@@ -4,7 +4,7 @@ The optimizer is being built in stages so bad assumptions cannot immediately aff
 
 ## Phase 1 — Telemetry and baseline learning
 
-Status: **in progress**
+Status: **baseline threshold reached; collection continues**
 
 Metrics Plus records the real inputs, outputs and encoder settings. Adaptive NVENC Optimizer reads those results and learns what normal P1000/NVENC behavior looks like.
 
@@ -12,9 +12,15 @@ No media modifications.
 
 ## Phase 2 — Diagnostic engine
 
-Improve explanations of completed encodes: good compression, audio-limited, already efficient, worth profiling, and similar categories.
+Status: **in progress**
+
+Improve explanations of completed encodes: good compression, audio-limited, already efficient, worth profiling, and similar categories. The advisor now also builds non-destructive sample-test plans and verifies whether a historical row still has access to its original source.
 
 ## Phase 3 — Automated sample extraction
+
+Status: **planning groundwork started; execution not enabled**
+
+The optimizer now calculates four representative sample positions and a QP ladder for an advisor row. Actual FFmpeg sample extraction/encoding is deliberately still disabled until the original-source lifecycle is handled safely.
 
 Select multiple short clips rather than encoding the whole file repeatedly. The sampler should eventually prefer varied scenes such as low motion, high motion, dark content, detailed scenes and grain/noise when detected.
 
