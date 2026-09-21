@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+- Moved Calibration Review into a prominent **modal workspace** opened from a new button in the page header, so retained reviews are no longer hidden at the bottom of the dashboard.
+- Added per-show **Calibration Review** buttons directly in the Encode Advisor for rows with retained calibration clips.
+- The review modal opens immediately and can show the retained-run list or jump directly into a show's blind A/B/C/D judging controls.
+- Reworked blind ZIP downloads into a background build job instead of compiling the archive synchronously inside the browser request.
+- Added a real ZIP build progress bar showing files completed, total files, and the current archive entry while the server prepares the bundle.
+- Completed ZIPs are cached for the retained run so repeat downloads do not have to rebuild the archive.
+- Clicking Download ZIP from the retained-run list now opens the review modal first, making bundle-build progress visible instead of appearing to do nothing.
+- Existing individual Reference/Candidate clip downloads remain available inside each show's review.
+
 ## 0.5.2
 
 - Replaced the Calibration Review modal with an **inline review workspace** to avoid Opera GX/Chromium dialog-transition issues where Open Calibration Review / Review retained clips only closed the sample-test dialog.
