@@ -3,15 +3,18 @@ on:
   push:
     branches: [main]
     paths:
-      - 'source/**'
+      - 'source/**/info.json'
       - 'build_repo.py'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
+
 concurrency:
   group: publish-unmanic-repo
   cancel-in-progress: true
+
 permissions:
   contents: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -19,16 +22,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Build repository
         run: python3 build_repo.py
+
       - name: Publish repo branch
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin repo:refs/remotes/origin/repo
           git worktree add -B repo /tmp/unmanic-repo origin/repo
-          find /tmp/unmanic-repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -a dist/. /tmp/unmanic-repo/
+
+          cp dist/repo.json /tmp/unmanic-repo/repo.json
+          cp dist/repo.json.md5 /tmp/unmanic-repo/repo.json.md5
+
+          for plugin_dir in dist/*/; do
+            plugin_name="$(basename "$plugin_dir")"
+            [ "$plugin_name" = "versions" ] && continue
+            mkdir -p "/tmp/unmanic-repo/$plugin_name"
+            cp -a "$plugin_dir". "/tmp/unmanic-repo/$plugin_name/"
+          done
+
+          mkdir -p /tmp/unmanic-repo/versions
+          cp -a dist/versions/. /tmp/unmanic-repo/versions/
+
           cd /tmp/unmanic-repo
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -39,3 +56,49 @@ jobs:
             git commit -m 'Publish Unmanic plugin repository'
             git push origin repo
           fi
+
+      - name: Create GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/releases.tsv
+          import json
+          for item in json.load(open("dist/release-manifest.json")):
+              print("\t".join([
+                  item["tag"],
+                  item["name"],
+                  item["version"],
+                  item["zip"],
+                  item.get("changelog", ""),
+                  item["pinned_repo"],
+              ]))
+          PY
+
+          while IFS=$'\t' read -r tag name version zip_rel changelog pinned_repo; do
+            [ -n "$tag" ] || continue
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release $tag already exists."
+              continue
+            fi
+
+            notes_file="/tmp/release-notes.md"
+            {
+              echo "# $name $version"
+              echo
+              echo "Installable package for Unmanic."
+              echo
+              echo "Rollback / pinned repository URL:"
+              echo "$pinned_repo"
+              echo
+              if [ -n "$changelog" ] && [ -f "$changelog" ]; then
+                cat "$changelog"
+              fi
+            } > "$notes_file"
+
+            gh release create "$tag" "dist/$zip_rel" \
+              --target "$GITHUB_SHA" \
+              --title "$name $version" \
+              --notes-file "$notes_file"
+          done < /tmp/releases.tsv
