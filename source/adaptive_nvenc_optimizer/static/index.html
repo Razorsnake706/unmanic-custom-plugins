@@ -380,6 +380,7 @@ async function pollSampleTest(jobId){
       $('runSampleTest').disabled=false;
       $('runSampleTest').textContent='Run sample test again';
       renderSampleResults(job);
+      loadCalibrationRuns(false);
       return
     }
     if(job.status==='failed'){
