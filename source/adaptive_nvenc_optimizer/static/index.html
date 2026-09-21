@@ -284,7 +284,7 @@ async function openSamplePlan(id){
     currentPlan=d;
     currentPlanId=id;
     $('runSampleTest').disabled=!plan.can_execute_safely;
-    $('runSampleTest').textContent=plan.can_execute_safely?'Run sample test':'Original required';
+    $('runSampleTest').textContent=plan.can_execute_safely?'Run sample test':'Reference required';
     $('sampleSettingInfo').textContent='Keep sample files: '+(plan.keep_sample_files?'ON':'OFF')+' · '+(referenceAvailable?'This test will use source clips captured before the full transcode. ':'')+(plan.keep_sample_files?'Calibration outputs/references will be retained for manual inspection.':'Temporary encoded test clips are deleted after scores are recorded; captured references are consumed after a successful test.');
     $('sampleProgress').classList.remove('show');
     $('sampleResults').classList.remove('show');
@@ -357,10 +357,10 @@ async function pollSampleTest(jobId){
 async function startSampleTest(){
   if(!currentPlanId||!currentPlan)return;
   if(!(currentPlan.plan||{}).can_execute_safely){
-    notice('The original source is not safely available for this test.');
+    notice('No safe original or pre-encode reference capture is available for this test.');
     return
   }
-  if(!confirm('Run '+Number((currentPlan.plan||{}).encode_variants||0)+' short NVENC test variants against the original source?\n\nThe real media file will not be replaced or modified.')){
+  if(!confirm('Run '+Number((currentPlan.plan||{}).encode_variants||0)+' short NVENC test variants against the available calibration reference?\n\nThe real media file will not be replaced or modified.')){
     return
   }
   $('runSampleTest').disabled=true;
