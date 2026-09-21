@@ -2029,9 +2029,10 @@ def _calibration_run_payload(run):
 
     qps = [int(qp) for qp in (result.get("qp_values") or [])]
     candidate_map = _blind_candidate_map(run.get("id"), qps)
-    ratings = _rating_rows(run.get("id"))
-    rating_by_label = {row["candidate_label"]: row for row in ratings}
-    completed = bool(candidate_map) and all(label in rating_by_label for label in candidate_map)
+
+    overall_ratings = _rating_rows(run.get("id"))
+    overall_by_label = {row["candidate_label"]: row for row in overall_ratings}
+    sample_rating_map = _sample_rating_map(run.get("id"))
 
     samples = result.get("samples") or []
     sample_indexes = sorted({
@@ -2041,6 +2042,8 @@ def _calibration_run_payload(run):
     })
 
     sample_rows = []
+    sample_rating_count = 0
+    sample_rating_required = 0
     for sample_index in sample_indexes:
         sample_item = next(
             (
@@ -2051,6 +2054,7 @@ def _calibration_run_payload(run):
         )
         if not sample_item:
             continue
+
         reference_name = sample_item.get("reference_file")
         if not reference_name:
             continue
@@ -2059,6 +2063,7 @@ def _calibration_run_payload(run):
             continue
 
         candidates = []
+        sample_ratings = {}
         for label in sorted(candidate_map):
             qp = candidate_map[label]
             candidate_item = next(
@@ -2074,14 +2079,38 @@ def _calibration_run_payload(run):
             candidate_path = os.path.join(sample_dir, candidate_item.get("file"))
             if not os.path.isfile(candidate_path):
                 continue
+
             candidates.append({"label": label})
+            rating_row = sample_rating_map.get((sample_index, label))
+            rating = rating_row.get("rating") if rating_row else None
+            sample_ratings[label] = rating
+            sample_rating_required += 1
+            if rating:
+                sample_rating_count += 1
 
         sample_rows.append({
             "sample_index": sample_index,
             "start": sample_item.get("start"),
             "length": sample_item.get("length"),
             "candidates": candidates,
+            "ratings": sample_ratings,
+            "rated_count": sum(1 for value in sample_ratings.values() if value),
+            "required_count": len(candidates),
         })
+
+    draft_complete = bool(sample_rating_required) and sample_rating_count >= sample_rating_required
+    review_submitted = bool(result.get("review_submitted"))
+    legacy_completed = (
+        not sample_rating_map
+        and bool(candidate_map)
+        and all(label in overall_by_label for label in candidate_map)
+    )
+    completed = review_submitted or legacy_completed
+    legacy_review = bool(legacy_completed and not review_submitted)
+
+    aggregate_draft = _aggregate_sample_ratings(
+        candidate_map, sample_indexes, sample_rating_map
+    ) if sample_rating_map else {}
 
     revealed = []
     if completed:
@@ -2093,7 +2122,7 @@ def _calibration_run_payload(run):
         target_qps = set(int(qp) for qp in (result.get("quality_target_qps") or []))
         for label in sorted(candidate_map):
             qp = candidate_map[label]
-            rating = rating_by_label.get(label) or {}
+            rating = overall_by_label.get(label) or {}
             summary = summary_by_qp.get(qp) or {}
             revealed.append({
                 "label": label,
@@ -2119,9 +2148,19 @@ def _calibration_run_payload(run):
         "candidate_count": len(candidate_map),
         "candidate_labels": sorted(candidate_map),
         "ratings": {
-            label: (rating_by_label.get(label) or {}).get("rating")
+            label: (overall_by_label.get(label) or {}).get("rating")
             for label in sorted(candidate_map)
         },
+        "aggregate_draft_ratings": aggregate_draft,
+        "sample_rating_count": sample_rating_count,
+        "sample_rating_required": sample_rating_required,
+        "draft_complete": draft_complete,
+        "review_submitted": review_submitted,
+        "review_submitted_at": _float(result.get("review_submitted_at")),
+        "review_rating_mode": result.get("review_rating_mode") or (
+            "legacy_overall" if legacy_review else "per_sample"
+        ),
+        "legacy_review": legacy_review,
         "completed": completed,
         "metrics_deferred": bool(result.get("metrics_deferred")),
         "quality_status": result.get("quality_status") or ("complete" if result.get("quality_complete") else "not_started"),
@@ -2134,6 +2173,7 @@ def _calibration_run_payload(run):
         "samples": sample_rows,
         "revealed": revealed,
     }
+
 
 
 def _calibration_runs():
