@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- Added **Select all matching** to select every record that matches the currently active filters, not just the 50 rows on the visible page.
+- The selection count updates to the full matching count and visible matching rows highlight immediately.
+- Bulk deletion now processes selected IDs in safe batches, so deleting hundreds or thousands of selected history entries does not run into URL/SQLite parameter limits.
+- Existing page-level Select All, Clear selection, and manual row selection remain available.
+
 ## 0.1.5
 
 - Added a direct GitHub repository refresh path that bypasses Unmanic's upstream custom-repository proxy cache.
