@@ -1548,12 +1548,12 @@ def _sample_test_worker(job_id, metric_id):
         finished = time.time()
         _job_update(
             job_id,
-            status="completed",
-            stage="review_ready" if defer_quality else "done",
+            status="finalizing",
+            stage="finalizing",
             finished=finished,
             result=result,
             completed=total,
-            current=None,
+            current="Saving calibration run",
         )
         test_completed = True
     except Exception as exc:
@@ -1569,9 +1569,13 @@ def _sample_test_worker(job_id, metric_id):
     finally:
         with _sample_job_lock:
             snapshot = dict(_sample_jobs.get(job_id) or {})
-            _sample_active_job = None
 
-        _persist_sample_run(snapshot)
+        persist_snapshot = dict(snapshot)
+        if test_completed:
+            persist_snapshot["status"] = "completed"
+            persist_snapshot["stage"] = "review_ready" if bool(snapshot.get("metrics_deferred")) else "done"
+            persist_snapshot["current"] = None
+        _persist_sample_run(persist_snapshot)
 
         keep = bool(snapshot.get("keep_files"))
         if job_dir and not keep:
@@ -1602,6 +1606,16 @@ def _sample_test_worker(job_id, metric_id):
                 _start_calibration_bundle({"run_id": job_id})
             except Exception:
                 logger.exception("Unable to auto-start retained calibration ZIP build")
+
+        with _sample_job_lock:
+            job = _sample_jobs.get(job_id)
+            if job is not None and test_completed:
+                job.update({
+                    "status": "completed",
+                    "stage": "review_ready" if bool(job.get("metrics_deferred")) else "done",
+                    "current": None,
+                })
+            _sample_active_job = None
 
 
 def _start_sample_test(arguments):
@@ -2127,8 +2141,6 @@ def _calibration_runs():
             completed_review_runs += 1
 
     for row in rating_rows:
-        if row["run_id"] in excluded_run_ids:
-            continue
         try:
             result = json.loads(row["result_json"] or "{}")
         except Exception:
