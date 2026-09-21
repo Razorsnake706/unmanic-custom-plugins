@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.0
+
+- Changed Calibration Review from one overall rating per Candidate A/B/C/D to **separate ratings for every candidate in every sample position**.
+- Each retained sample now contains its own Reference/Candidate downloads, independent A/B/C/D rating controls, and a per-sample **All candidates in this sample look indistinguishable** shortcut.
+- Added draft rating storage in `calibration_sample_ratings`; clicking a rating saves the draft immediately but does **not** start threshold learning or objective scoring.
+- Added an explicit **Submit ratings** step. Submission is disabled until every candidate in every sample has a rating, then locks the review and starts targeted objective scoring.
+- Added a sticky **Submit ratings** button at the top of the review modal plus a detailed progress box showing how many sample ratings are complete, so the confirmation action is always visible while reviewing.
+- On submission, Adaptive derives the current conservative overall rating for each QP from the **worst reviewable sample**. `Unreviewable` samples are ignored unless every sample for that candidate is unreviewable.
+- Candidate-to-QP mapping remains hidden until Submit ratings is pressed.
+- Existing completed reviews from the old overall-rating workflow remain readable as **legacy reviews** and are not rewritten.
+- Per-sample ratings are retained for future content-aware learning even though current boundary selection still uses the conservative aggregate rating.
+
 ## 0.7.2
 
 - Added an explicit **Finish review & delete clips** step after subjective review is complete.
