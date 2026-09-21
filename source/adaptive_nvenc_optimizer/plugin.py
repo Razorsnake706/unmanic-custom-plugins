@@ -2718,6 +2718,45 @@ def _overview(arguments):
                 reverse=True,
             )[:limit]
 
+        # Attach retained Calibration Review state to visible advisor rows so
+        # each show can expose a direct Review button without rescanning from
+        # the browser.
+        review_by_metric = {}
+        try:
+            with _optimizer_db() as opt_conn:
+                review_rows = opt_conn.execute(
+                    """
+                    SELECT *
+                    FROM sample_runs
+                    WHERE success=1 AND keep_files=1
+                    ORDER BY finished DESC, started DESC
+                    """
+                ).fetchall()
+            for review_row in review_rows:
+                review_run = dict(review_row)
+                metric_key = _int(review_run.get("metric_id"))
+                if metric_key is None or metric_key in review_by_metric:
+                    continue
+                try:
+                    review_run["result"] = json.loads(review_run.get("result_json") or "{}")
+                except Exception:
+                    review_run["result"] = {}
+                payload = _calibration_run_payload(review_run)
+                if payload:
+                    review_by_metric[metric_key] = payload
+        except Exception:
+            logger.exception("Unable to annotate advisor rows with calibration review state")
+
+        for item in candidates:
+            review = review_by_metric.get(_int(item.get("id")))
+            item["review_ready"] = bool(review)
+            item["review_id"] = review.get("id") if review else None
+            item["review_completed"] = bool(review and review.get("completed"))
+            item["review_rated"] = (
+                sum(1 for value in (review.get("ratings") or {}).values() if value)
+                if review else 0
+            )
+
         latest_finish = max(
             [x.get("finish_time") or 0 for x in analyzed] or [0]
         )
@@ -2751,6 +2790,7 @@ def _overview(arguments):
                 "metrics_wal_mtime": wal_mtime,
                 "sort_mode": sort_mode,
                 "reference_ready": sum(1 for x in analyzed if x.get("reference_ready")),
+                "review_ready": len(review_by_metric),
             },
             "candidates": candidates,
             "learning_mode": True,
