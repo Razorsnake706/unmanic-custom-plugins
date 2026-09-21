@@ -73,7 +73,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 </head>
 <body><main class="wrap">
 <div class="top">
-  <div><div class="muted">Unmanic Data Panel · v0.1.5</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
+  <div><div class="muted">Unmanic Data Panel · v0.1.6</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div>
   <div class="actions"><button id="refresh" class="btn">Refresh</button><button id="checkUpdates" class="btn">Check plugin updates</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div>
 </div>
 <div id="notice" class="notice hidden"></div>
@@ -118,6 +118,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
   <div class="actions">
     <div class="selection-tools">
       <span id="selectedCount" class="muted">0 selected</span>
+      <button id="selectAllMatching" class="btn" type="button" disabled>Select all matching</button>
       <button id="clearSelected" class="btn" type="button" disabled>Clear selection</button>
       <button id="deleteSelected" class="btn danger" type="button" disabled>Delete selected</button>
     </div>
@@ -181,7 +182,7 @@ const COLUMN_PRESETS={
   paths:['file_name','source_folder','dest_folder','bytes_saved','percent_saved'],
   all:COLUMN_DEFS.map(function(x){return x[0]})
 };
-let state={page:1,pages:1,sort:'finish_time',dir:'desc'};
+let state={page:1,pages:1,sort:'finish_time',dir:'desc',total:0};
 const selectedIds=new Set();
 let currentPageIds=[];
 let loadSequence=0;
@@ -274,6 +275,7 @@ async function load(){
     const d=await r.json();
     if(seq!==loadSequence)return;
     state.pages=d.pages||1;
+    state.total=Number(d.total||0);
     currentPageIds=(d.items||[]).map(function(x){return String(x.id)});
 
     syncSelect($('library'),d.options?.libraries||[],'All libraries','id');
@@ -289,6 +291,8 @@ async function load(){
     $('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);
     updateTotalChart(s);
     $('count').textContent=`${d.total||0} matching records`;
+    $('selectAllMatching').textContent='Select all '+Number(d.total||0).toLocaleString()+' matching';
+    $('selectAllMatching').disabled=!Number(d.total||0);
     $('page').textContent=`Page ${d.page||1} of ${d.pages||1}`;
     $('prev').disabled=state.page<=1;$('next').disabled=state.page>=state.pages;
 
@@ -482,6 +486,7 @@ function updateSelectionUi(){
   $('selectedCount').textContent=count+' selected';
   $('deleteSelected').disabled=count===0;
   $('clearSelected').disabled=count===0;
+  $('selectAllMatching').disabled=state.total===0;
   const pageSelected=currentPageIds.filter(function(id){return selectedIds.has(id)}).length;
   $('selectAllPage').checked=currentPageIds.length>0&&pageSelected===currentPageIds.length;
   $('selectAllPage').indeterminate=pageSelected>0&&pageSelected<currentPageIds.length
@@ -504,17 +509,55 @@ $('clearSelected').onclick=function(){
   });
   updateSelectionUi()
 };
+$('selectAllMatching').onclick=async function(){
+  if(!state.total)return;
+  $('selectAllMatching').disabled=true;
+  const oldText=$('selectAllMatching').textContent;
+  $('selectAllMatching').textContent='Selecting...';
+  try{
+    const r=await fetch(base()+'matchingIds?'+qs(),{cache:'no-store'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.message||'Unable to fetch matching entries');
+    (d.ids||[]).forEach(function(id){selectedIds.add(String(id))});
+    document.querySelectorAll('.rowSelect').forEach(function(box){
+      const checked=selectedIds.has(String(box.dataset.selectId));
+      box.checked=checked;
+      const tr=box.closest('tr');if(tr)tr.classList.toggle('row-selected',checked)
+    });
+    notice('Selected '+Number(d.count||0).toLocaleString()+' matching entr'+(Number(d.count||0)===1?'y':'ies')+'.');
+  }catch(e){
+    notice('Unable to select all matching entries: '+e.message)
+  }finally{
+    $('selectAllMatching').textContent=oldText;
+    updateSelectionUi()
+  }
+};
 $('deleteSelected').onclick=async function(){
   if(!selectedIds.size)return;
   const count=selectedIds.size;
   if(!confirm('Delete '+count+' selected metrics entr'+(count===1?'y':'ies')+'?\n\nThis only removes File Size Metrics Plus history records. Your media files will not be deleted.'))return;
-  const ids=Array.from(selectedIds).join(',');
-  const r=await fetch(base()+'delete?'+new URLSearchParams({ids:ids}),{cache:'no-store'});
-  const d=await r.json();
-  notice(d.message||'Delete complete');
-  if(d.success)selectedIds.clear();
-  state.page=1;
-  load()
+
+  $('deleteSelected').disabled=true;
+  const ids=Array.from(selectedIds);
+  const chunkSize=250;
+  let deleted=0;
+
+  try{
+    for(let i=0;i<ids.length;i+=chunkSize){
+      const chunk=ids.slice(i,i+chunkSize).join(',');
+      const r=await fetch(base()+'delete?'+new URLSearchParams({ids:chunk}),{cache:'no-store'});
+      const d=await r.json();
+      if(!d.success)throw new Error(d.message||'Delete failed');
+      deleted+=Number(d.deleted||0)
+    }
+    selectedIds.clear();
+    notice('Deleted '+deleted.toLocaleString()+' metric entr'+(deleted===1?'y':'ies')+'.');
+    state.page=1;
+    load()
+  }catch(e){
+    notice('Delete stopped after '+deleted.toLocaleString()+' entries: '+e.message);
+    load()
+  }
 };
 
 ['status','library','srcCodec','dstCodec','worker','change','from','to'].forEach(function(id){
