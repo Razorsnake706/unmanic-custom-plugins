@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Added a direct GitHub repository refresh path that bypasses Unmanic's upstream custom-repository proxy cache.
+- File Size Metrics Plus now refreshes its configured custom-repo cache directly from GitHub when the panel opens.
+- Added **Check plugin updates** to force a direct repository refresh from the panel.
+- This is intended to prevent future releases from getting stuck on stale versions even when Unmanic's normal Refresh Repositories action does not update the custom repo.
+
 ## 0.1.4
 
 - Removed the **Combine repeat passes** option from the main table.
