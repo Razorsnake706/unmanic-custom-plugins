@@ -114,8 +114,13 @@ def _probe(path):
         if s.get("codec_type") != "audio":
             continue
         label = s.get("codec_name") or "unknown"
+        if s.get("profile") and str(s.get("profile")).lower() not in ("unknown", "none"):
+            label += f" {s.get('profile')}"
         if s.get("channels"):
             label += f" {s.get('channels')}ch"
+        bit_rate = _num(s.get("bit_rate"))
+        if bit_rate:
+            label += f" {round(bit_rate / 1000)}kbps"
         lang = (s.get("tags") or {}).get("language")
         if lang:
             label += f" {lang}"
@@ -473,6 +478,7 @@ def _summary_for_items(items):
     dest = sum(int(x.get("dest_size") or 0) for x in items)
     return {
         "count": len(items),
+        "passes": sum(int(x.get("pass_count") or 1) for x in items),
         "success": sum(1 for x in items if x.get("success")),
         "failed": sum(1 for x in items if not x.get("success")),
         "source": source,
