@@ -1744,6 +1744,8 @@ def _save_sample_run_result(run_id, result):
 
 
 def _quality_target_qps(run_id, result):
+    if result.get("calibration_excluded"):
+        return []
     candidate_map = _blind_candidate_map(run_id, result.get("qp_values") or [])
     ratings = _rating_rows(run_id)
     rating_by_label = {row["candidate_label"]: row["rating"] for row in ratings}
@@ -1878,6 +1880,13 @@ def _schedule_deferred_quality(run_id):
         return {"success": False, "message": "Calibration run was not found."}
 
     result = run.get("result") or {}
+    if result.get("calibration_excluded"):
+        if result.get("quality_status") not in ("complete", "running"):
+            result["quality_status"] = "skipped_unsuitable"
+            result["quality_target_qps"] = []
+            result["quality_error"] = None
+            _save_sample_run_result(run_id, result)
+        return {"success": True, "scheduled": False, "status": result.get("quality_status") or "skipped_unsuitable"}
     if not result.get("metrics_deferred"):
         return {"success": True, "scheduled": False, "status": result.get("quality_status") or "complete"}
 
@@ -2023,6 +2032,9 @@ def _calibration_run_payload(run):
             for label in sorted(candidate_map)
         },
         "completed": completed,
+        "excluded": bool(result.get("calibration_excluded")),
+        "excluded_reason": result.get("calibration_excluded_reason"),
+        "excluded_at": _float(result.get("calibration_excluded_at")),
         "metrics_deferred": bool(result.get("metrics_deferred")),
         "quality_status": result.get("quality_status") or ("complete" if result.get("quality_complete") else "not_started"),
         "quality_target_qps": result.get("quality_target_qps") or [],
