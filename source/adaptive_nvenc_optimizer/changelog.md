@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- Added a real Unmanic `on_worker_process` runner so Adaptive NVENC Optimizer can be enabled in GPU video libraries.
+- Added automatic **pre-encode reference capture**. When Adaptive runs before Transcode Video Files, it saves short video-only stream-copy clips from the untouched source before the full HEVC encode replaces it.
+- Added persistent reference-capture tracking linked to Metrics Plus by task ID/source path.
+- Manual GPU calibration can now use captured reference clips even after the full original file has been replaced by HEVC.
+- Added reference-capture badges/counts to the Adaptive dashboard and sample-plan dialog.
+- Added `Capture pre-encode reference clips` (default ON), reference retention (default 72 hours), and a soft reference-cache cap (default 10 GB).
+- `Keep calibration/test sample files` can remain OFF. Successful calibration consumes/deletes temporary reference and QP-test clips after objective results are saved; enabling it retains them for visual review.
+- Reference capture failures never fail the normal Unmanic media task; the regular video encode continues.
+- Added automatic cleanup for expired/old reference captures.
+- GitHub releases now show only the changelog section for that specific version instead of the entire project changelog.
+
 ## 0.2.1
 
 - Fixed the Adaptive dashboard appearing stale after new encodes completed.
