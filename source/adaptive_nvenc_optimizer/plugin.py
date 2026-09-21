@@ -1922,6 +1922,7 @@ def _calibration_run_payload(run):
             for item in (result.get("qp_summary") or [])
             if item.get("qp") is not None
         }
+        target_qps = set(int(qp) for qp in (result.get("quality_target_qps") or []))
         for label in sorted(candidate_map):
             qp = candidate_map[label]
             rating = rating_by_label.get(label) or {}
@@ -1936,6 +1937,7 @@ def _calibration_run_payload(run):
                 "encode_seconds": summary.get("encode_seconds"),
                 "quality_samples": summary.get("quality_samples"),
                 "samples": summary.get("samples"),
+                "quality_target": qp in target_qps,
             })
 
     return {
@@ -1953,6 +1955,13 @@ def _calibration_run_payload(run):
             for label in sorted(candidate_map)
         },
         "completed": completed,
+        "metrics_deferred": bool(result.get("metrics_deferred")),
+        "quality_status": result.get("quality_status") or ("complete" if result.get("quality_complete") else "not_started"),
+        "quality_target_qps": result.get("quality_target_qps") or [],
+        "quality_total": _int(result.get("quality_total")) or 0,
+        "quality_completed": _int(result.get("quality_completed")) or 0,
+        "quality_error": result.get("quality_error"),
+        "quality_seconds": _float(result.get("quality_seconds")),
         "samples": sample_rows,
         "revealed": revealed,
     }
@@ -2107,7 +2116,14 @@ def _rate_calibration(arguments):
 
     refreshed = _load_sample_run(run_id)
     payload = _calibration_run_payload(refreshed) if refreshed else None
-    return {"success": True, "run": payload}
+
+    quality = None
+    if payload and payload.get("completed"):
+        quality = _schedule_deferred_quality(run_id)
+        refreshed = _load_sample_run(run_id)
+        payload = _calibration_run_payload(refreshed) if refreshed else payload
+
+    return {"success": True, "run": payload, "quality": quality}
 
 
 def _safe_calibration_file(arguments):
