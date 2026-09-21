@@ -1,0 +1,38 @@
+name: Publish Unmanic plugin repository
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source/**'
+      - 'build_repo.py'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build repository
+        run: python3 build_repo.py
+      - name: Publish repo branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin repo
+          git worktree add /tmp/unmanic-repo repo
+          find /tmp/unmanic-repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a dist/. /tmp/unmanic-repo/
+          cd /tmp/unmanic-repo
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No repository changes to publish.'
+          else
+            git commit -m 'Publish Unmanic plugin repository'
+            git push origin repo
+          fi
