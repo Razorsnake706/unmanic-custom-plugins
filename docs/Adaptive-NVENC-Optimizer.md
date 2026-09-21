@@ -149,3 +149,23 @@ Default capture settings:
 If reference capture fails for any reason, Adaptive logs the problem and returns control to Unmanic. The normal video task is never intentionally failed just because calibration data could not be captured.
 
 After a successful manual calibration with retention OFF, both the temporary QP test clips and the consumed pre-encode reference clips are removed. The XPSNR/SSIM result remains stored in `adaptive_optimizer.db`.
+
+## Calibration Review
+
+When `Keep calibration/test sample files` is ON, a successful manual sample test appears in the **Calibration Review** section of the Adaptive data panel.
+
+The review is intentionally blind. QP values and objective XPSNR/SSIM scores are hidden behind Candidate A/B/C/D until every candidate has been rated. This reduces the chance that seeing a higher QP or lower metric score biases the visual judgment.
+
+For each retained sample position the panel provides downloads for the source **Reference** clip and every candidate clip. Review a candidate across all retained positions, then assign one overall rating:
+
+- Indistinguishable
+- Acceptable
+- Borderline
+- Unacceptable
+- Unreviewable
+
+After all candidates are rated, the panel reveals the real QP, XPSNR, SSIM and bitrate for each candidate. Those subjective ratings are stored alongside the objective sample-test results in `adaptive_optimizer.db`.
+
+After review, **Delete retained files** removes the reference/candidate video files while keeping the numerical results and ratings. This prevents calibration media from accumulating indefinitely.
+
+The panel also shows observed quality ranges from reviewed candidates. These are diagnostic ranges only; automatic QP selection will not use a learned threshold until enough diverse reviewed runs exist.
