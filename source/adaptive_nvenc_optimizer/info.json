@@ -8,5 +8,5 @@
   "platform": ["all"],
   "priorities": {},
   "tags": "data panel nvenc gpu adaptive optimizer analytics",
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
