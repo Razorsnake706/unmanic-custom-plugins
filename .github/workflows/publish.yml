@@ -72,12 +72,38 @@ jobs:
                   item["name"],
                   item["version"],
                   item["zip"],
-                  item.get("changelog", ""),
+                  item.get("release_notes", ""),
                   item["pinned_repo"],
               ]))
           PY
 
-          while IFS=$'\t' read -r tag name version zip_rel changelog pinned_repo; do
+          while IFS=
+            [ -n "$tag" ] || continue
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release $tag already exists."
+              continue
+            fi
+
+            notes_file="/tmp/release-notes.md"
+            {
+              echo "# $name $version"
+              echo
+              echo "Installable package for Unmanic."
+              echo
+              echo "Rollback / pinned repository URL:"
+              echo "$pinned_repo"
+              echo
+              if [ -n "$release_notes" ] && [ -f "dist/$release_notes" ]; then
+                cat "dist/$release_notes"
+              fi
+            } > "$notes_file"
+
+            gh release create "$tag" "dist/$zip_rel" \
+              --target "$GITHUB_SHA" \
+              --title "$name $version" \
+              --notes-file "$notes_file"
+          done < /tmp/releases.tsv
+\t' read -r tag name version zip_rel release_notes pinned_repo; do
             [ -n "$tag" ] || continue
             if gh release view "$tag" >/dev/null 2>&1; then
               echo "Release $tag already exists."
