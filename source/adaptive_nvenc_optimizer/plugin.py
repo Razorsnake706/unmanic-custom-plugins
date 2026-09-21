@@ -599,6 +599,269 @@ def _sample_timestamps(duration, sample_length, sample_count=4):
     return starts
 
 
+
+def _capture_reference_segment(source_path, start, length, output_path):
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", str(start),
+        "-i", source_path,
+        "-t", str(length),
+        "-map", "0:v:0",
+        "-an", "-sn", "-dn",
+        "-c:v", "copy",
+        "-avoid_negative_ts", "make_zero",
+        output_path,
+    ]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=max(60, int(length * 3)),
+        check=False,
+    )
+    if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) <= 0:
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except OSError:
+            pass
+        return {
+            "success": False,
+            "error": (proc.stderr or proc.stdout or "Reference capture failed.").strip()[-1200:],
+        }
+
+    identity = _current_media_identity(output_path)
+    return {
+        "success": True,
+        "duration": _float(identity.get("duration")) or _float(length),
+        "codec": identity.get("codec"),
+        "bytes": os.path.getsize(output_path),
+        "command": cmd,
+    }
+
+
+def _capture_preencode_references(data, setting_obj):
+    source_path = data.get("file_in") or data.get("original_file_path")
+    original_path = data.get("original_file_path") or source_path
+    worker_log = data.get("worker_log")
+    task_id = _int(data.get("task_id"))
+    library_id = _int(data.get("library_id"))
+
+    if not source_path or not os.path.isfile(source_path):
+        _append_worker_log(worker_log, "Reference capture skipped: source file is not available.")
+        return None
+
+    # This runner must execute before the video transcoder so that file_in still
+    # points at the untouched library source rather than a cache artifact created
+    # by an earlier processing plugin.
+    try:
+        same_source = os.path.realpath(source_path) == os.path.realpath(original_path)
+    except Exception:
+        same_source = os.path.abspath(source_path) == os.path.abspath(original_path)
+    if not same_source:
+        _append_worker_log(
+            worker_log,
+            "Reference capture skipped because Adaptive NVENC Optimizer is not first in the worker flow. "
+            "Move it before Transcode Video Files.",
+        )
+        return None
+
+    identity = _current_media_identity(source_path)
+    if identity.get("probe_error"):
+        _append_worker_log(worker_log, "Reference capture skipped: source probe failed.")
+        return None
+
+    source_codec = str(identity.get("codec") or "").lower()
+    if not source_codec:
+        _append_worker_log(worker_log, "Reference capture skipped: no video stream was detected.")
+        return None
+    if source_codec in ("hevc", "h265", "av1"):
+        _append_worker_log(
+            worker_log,
+            "Reference capture skipped: source video is already {}.".format(source_codec),
+        )
+        return None
+
+    duration = _float(identity.get("duration"))
+    if not duration:
+        _append_worker_log(worker_log, "Reference capture skipped: media duration is unavailable.")
+        return None
+
+    # Avoid duplicating captures if Unmanic retries the same task runner.
+    if task_id is not None:
+        with _optimizer_db() as conn:
+            existing = conn.execute(
+                """
+                SELECT * FROM reference_captures
+                WHERE task_id=? AND source_path=? AND status IN ('capturing','ready','retained','tested')
+                ORDER BY created DESC LIMIT 1
+                """,
+                (task_id, source_path),
+            ).fetchone()
+        existing_capture = _capture_record(existing)
+        if existing_capture and existing_capture.get("available"):
+            _append_worker_log(worker_log, "Pre-encode reference clips already exist for this task.")
+            return existing_capture
+
+    sample_count, sample_length = _sampling_values(setting_obj, duration)
+    starts = _sample_timestamps(duration, sample_length, sample_count)
+    if not starts:
+        _append_worker_log(worker_log, "Reference capture skipped: media is too short for the configured sample duration.")
+        return None
+
+    keep_files = bool(setting_obj.get_setting("keep_sample_files"))
+    retention_hours = max(
+        1.0,
+        min(24.0 * 30.0, _float(setting_obj.get_setting("reference_retention_hours")) or 72.0),
+    )
+    created = time.time()
+    expires = None if keep_files else created + retention_hours * 3600.0
+    capture_id = "{}-{}".format(task_id if task_id is not None else "source", uuid.uuid4().hex[:10])
+    capture_dir = os.path.join(_reference_root(), capture_id)
+    os.makedirs(capture_dir, exist_ok=False)
+
+    with _optimizer_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO reference_captures(
+                id, task_id, library_id, source_path, file_name, source_codec,
+                source_size, created, expires, sample_length, sample_count,
+                directory, status, keep_files, manifest_json, error
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                capture_id,
+                task_id,
+                library_id,
+                source_path,
+                os.path.basename(source_path),
+                source_codec,
+                _int(identity.get("size")),
+                created,
+                expires,
+                sample_length,
+                len(starts),
+                capture_dir,
+                "capturing",
+                1 if keep_files else 0,
+                None,
+                None,
+            ),
+        )
+
+    _append_worker_log(
+        worker_log,
+        "Capturing {} pre-encode reference clips before the video transcode.".format(len(starts)),
+    )
+
+    clips = []
+    errors = []
+    for index, start in enumerate(starts, 1):
+        output_path = os.path.join(capture_dir, "reference_{:02d}.mkv".format(index))
+        result = _capture_reference_segment(source_path, start, sample_length, output_path)
+        if not result.get("success"):
+            errors.append("sample {}: {}".format(index, result.get("error") or "capture failed"))
+            _append_worker_log(worker_log, "Reference clip {} failed; continuing.".format(index))
+            continue
+
+        clips.append({
+            "index": index,
+            "requested_start": start,
+            "requested_length": sample_length,
+            "duration": result.get("duration"),
+            "path": output_path,
+            "file_name": os.path.basename(output_path),
+            "bytes": result.get("bytes"),
+            "codec": result.get("codec"),
+        })
+
+    manifest = {
+        "capture_id": capture_id,
+        "task_id": task_id,
+        "library_id": library_id,
+        "source_path": source_path,
+        "source_codec": source_codec,
+        "source_size": _int(identity.get("size")),
+        "source_duration": duration,
+        "sample_length": sample_length,
+        "sample_starts": starts,
+        "clips": clips,
+        "created": created,
+        "expires": expires,
+        "errors": errors,
+    }
+
+    if not clips:
+        try:
+            shutil.rmtree(capture_dir)
+        except Exception:
+            pass
+        with _optimizer_db() as conn:
+            conn.execute(
+                """
+                UPDATE reference_captures
+                SET status='failed', error=?, manifest_json=?
+                WHERE id=?
+                """,
+                (
+                    "; ".join(errors)[:3000] or "No reference clips were captured.",
+                    json.dumps(manifest, default=str),
+                    capture_id,
+                ),
+            )
+        _append_worker_log(worker_log, "Reference capture failed; normal Unmanic processing will continue.")
+        return None
+
+    manifest_path = os.path.join(capture_dir, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, default=str)
+
+    with _optimizer_db() as conn:
+        conn.execute(
+            """
+            UPDATE reference_captures
+            SET status='ready', sample_count=?, manifest_json=?, error=?
+            WHERE id=?
+            """,
+            (
+                len(clips),
+                json.dumps(manifest, default=str),
+                "; ".join(errors)[:3000] if errors else None,
+                capture_id,
+            ),
+        )
+
+    _append_worker_log(
+        worker_log,
+        "Captured {} reference clips. Normal video processing can continue.".format(len(clips)),
+    )
+    capture = _reference_capture_by_id(capture_id)
+    _cleanup_reference_captures(setting_obj)
+    return capture
+
+
+def on_worker_process(data):
+    """Capture lightweight stream-copy references before the normal video transcoder."""
+    data["exec_command"] = []
+    data["repeat"] = False
+
+    try:
+        setting_obj = _library_settings(data.get("library_id"))
+        if not bool(setting_obj.get_setting("capture_reference_clips")):
+            return
+
+        _cleanup_reference_captures(setting_obj)
+        _capture_preencode_references(data, setting_obj)
+    except Exception as exc:
+        # Calibration must never prevent the user's normal media job from running.
+        logger.exception("Pre-encode reference capture failed")
+        _append_worker_log(
+            data.get("worker_log"),
+            "Reference capture encountered an error and was skipped: {}".format(exc),
+        )
+    return
+
+
 def _sample_plan(arguments):
     metric_id = _int(_arg(arguments, "id", 0))
     if not metric_id:
