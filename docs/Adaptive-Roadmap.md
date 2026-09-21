@@ -131,3 +131,7 @@ model learns from prediction error
 ## Calibration performance optimization
 
 Human calibration uses a review-first workflow: generate retained GPU candidates, collect blind subjective ratings, then calculate combined XPSNR+SSIM only around the observed quality boundary. This avoids making the user wait for CPU metrics on every candidate before clips can be reviewed and reduces the metric workload used to train the future adaptive threshold.
+
+## Coarse-to-fine subjective search
+
+Calibration now begins with a wide QP ladder to locate a visible quality boundary rather than asking the reviewer to distinguish several nearly identical encodes. The next planned refinement is a second-stage ladder that narrows around the highest acceptable / first unacceptable QPs. Runs where every candidate is indistinguishable are retained as evidence that the boundary lies above the tested range and can drive a higher follow-up ladder.
