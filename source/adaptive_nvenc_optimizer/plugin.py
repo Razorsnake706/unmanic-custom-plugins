@@ -37,6 +37,8 @@ _sample_jobs = {}
 _sample_active_job = None
 _quality_job_lock = threading.Lock()
 _quality_jobs = {}
+_bundle_job_lock = threading.Lock()
+_bundle_jobs = {}
 
 
 class Settings(PluginSettings):
@@ -188,6 +190,12 @@ def _optimizer_db():
 
 def _sample_root():
     path = os.path.join(_optimizer_profile(), "samples")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _bundle_root():
+    path = os.path.join(_optimizer_profile(), "calibration-bundles")
     os.makedirs(path, exist_ok=True)
     return path
 
