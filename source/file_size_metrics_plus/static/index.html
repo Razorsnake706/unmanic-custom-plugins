@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" class="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>File Size Metrics Plus</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#18202a;background:#f4f6f8}html.dark{color:#e7edf4;background:#11161d}*{box-sizing:border-box}body{margin:0;background:inherit;color:inherit}.wrap{max-width:1500px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:18px}.top h1{margin:2px 0 6px;font-size:28px}.muted{opacity:.68}.actions,.filters{display:flex;flex-wrap:wrap;gap:8px}.btn,input,select{border:1px solid #c8d0d9;border-radius:7px;padding:8px 10px;background:#fff;color:#17202a}.dark .btn,.dark input,.dark select{background:#1a222c;color:#e7edf4;border-color:#394654}.btn{cursor:pointer}.primary{background:#2676d8;color:white;border-color:#2676d8}.cards{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:10px;margin:14px 0}.card,.panel{background:#fff;border:1px solid #dce2e8;border-radius:10px;padding:14px}.dark .card,.dark .panel{background:#171e27;border-color:#303a46}.metric{font-size:23px;font-weight:700;margin-top:4px}.filters{margin-bottom:12px}.filters input,.filters select{min-width:130px}.filters .search{min-width:240px;flex:1}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px;border-bottom:1px solid #e4e8ed;text-align:left;white-space:nowrap}.dark th,.dark td{border-color:#2e3844}th{cursor:pointer;position:sticky;top:0;background:inherit}td.num{text-align:right}.good{color:#18824b}.bad{color:#c33}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px}.notice{margin:10px 0;padding:10px;border-radius:8px;background:#eaf2ff}.dark .notice{background:#1d314b}.hidden{display:none}dialog{border:0;border-radius:12px;max-width:850px;width:90%;padding:0;background:transparent}.dialog{background:#fff;color:#18202a;border-radius:12px;padding:18px}.dark .dialog{background:#171e27;color:#e7edf4}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.grid div{padding:8px;background:rgba(128,128,128,.08);border-radius:7px}.grid span{display:block;font-size:12px;opacity:.65}.grid strong{word-break:break-all}@media(max-width:1000px){.cards{grid-template-columns:repeat(2,1fr)}.top{display:block}.actions{margin-top:10px}}@media(max-width:650px){.grid{grid-template-columns:1fr}}
+</style>
+<script>const p=new URLSearchParams(location.search);if(p.get('theme')==='dark')document.documentElement.className='dark';</script>
+</head>
+<body><main class="wrap">
+<div class="top"><div><div class="muted">Unmanic Data Panel</div><h1>File Size Metrics Plus</h1><div class="muted">Filter, inspect, and export Unmanic completion history.</div></div><div class="actions"><button id="refresh" class="btn">Refresh</button><button id="import" class="btn">Import official history</button><button id="export" class="btn primary">Export CSV</button></div></div>
+<div id="notice" class="notice hidden"></div>
+<section class="cards">
+<div class="card"><div class="muted">Files</div><div id="mCount" class="metric">0</div><div id="mStatus" class="muted"></div></div>
+<div class="card"><div class="muted">Before</div><div id="mBefore" class="metric">0 B</div></div>
+<div class="card"><div class="muted">After</div><div id="mAfter" class="metric">0 B</div></div>
+<div class="card"><div class="muted">Saved</div><div id="mSaved" class="metric">0 B</div></div>
+<div class="card"><div class="muted">Reduction</div><div id="mPct" class="metric">—</div></div>
+<div class="card"><div class="muted">Processing time</div><div id="mTime" class="metric">0s</div></div>
+</section>
+<section class="panel">
+<div class="filters">
+<input id="search" class="search" placeholder="Search filename or path">
+<input id="from" type="date"><input id="to" type="date">
+<select id="status"><option value="all">All statuses</option><option value="success">Success</option><option value="failed">Failed</option></select>
+<select id="library"><option value="">All libraries</option></select>
+<select id="srcCodec"><option value="">All input codecs</option></select>
+<select id="dstCodec"><option value="">All output codecs</option></select>
+<select id="worker"><option value="">All workers</option></select>
+<select id="change"><option value="all">Any size change</option><option value="saved">Smaller</option><option value="grew">Larger</option><option value="same">Same size</option></select>
+<input id="minPct" type="number" step="0.1" placeholder="Min % saved"><input id="maxPct" type="number" step="0.1" placeholder="Max % saved">
+<button id="apply" class="btn primary">Apply</button><button id="reset" class="btn">Reset</button>
+</div>
+<div class="tablewrap"><table><thead><tr>
+<th data-sort="finish_time">Finished</th><th data-sort="file_name">File</th><th data-sort="library_name">Library</th><th>Status</th><th data-sort="source_codec">Input</th><th data-sort="dest_codec">Output</th><th data-sort="source_size">Before</th><th data-sort="dest_size">After</th><th data-sort="bytes_saved">Saved</th><th data-sort="percent_saved">%</th><th data-sort="duration">Time</th><th data-sort="worker">Worker</th>
+</tr></thead><tbody id="rows"></tbody></table></div>
+<div class="pager"><div id="count" class="muted"></div><div><button id="prev" class="btn">Previous</button> <span id="page"></span> <button id="next" class="btn">Next</button></div></div>
+</section>
+</main>
+<dialog id="details"><div class="dialog"><h3 id="detailTitle"></h3><div id="detailGrid" class="grid"></div><p><button id="close" class="btn">Close</button></p></div></dialog>
+<script>
+const $=id=>document.getElementById(id);let state={page:1,pages:1,sort:'finish_time',dir:'desc',loaded:false};
+const humanBytes=v=>{if(v===null||v===undefined)return'—';let n=Number(v),s=n<0?'-':'';n=Math.abs(n);let u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return s+n.toFixed(i>=3?2:i===2?1:0)+' '+u[i]};
+const humanTime=v=>{if(v===null||v===undefined)return'—';let s=Math.max(0,Math.round(v)),d=Math.floor(s/86400);s%=86400;let h=Math.floor(s/3600);s%=3600;let m=Math.floor(s/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`};
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const date=v=>v?new Date(Number(v)*1000).toLocaleString():'—';const pct=v=>v===null||v===undefined?'—':Number(v).toFixed(1)+'%';
+function base(){return location.pathname.replace(/\/$/,'')+'/'}function qs(extra={}){let p=new URLSearchParams({search:$('search').value,date_from:$('from').value,date_to:$('to').value,status:$('status').value,library:$('library').value,source_codec:$('srcCodec').value,dest_codec:$('dstCodec').value,worker:$('worker').value,change:$('change').value,min_percent:$('minPct').value,max_percent:$('maxPct').value,...extra});return p}
+function notice(t){$('notice').textContent=t;$('notice').classList.remove('hidden');setTimeout(()=>$('notice').classList.add('hidden'),6000)}
+function fill(sel,items,valueKey=''){if(state.loaded)return;for(const x of items){let o=document.createElement('option');o.value=valueKey?x[valueKey]:x;o.textContent=x.name||x;sel.appendChild(o)}}
+async function load(){let r=await fetch(base()+'list?'+qs({page:state.page,page_size:50,sort:state.sort,dir:state.dir}));let d=await r.json();state.pages=d.pages||1;if(!state.loaded){fill($('library'),d.options.libraries||[],'id');fill($('srcCodec'),d.options.codecs||[]);fill($('dstCodec'),d.options.codecs||[]);fill($('worker'),d.options.workers||[]);state.loaded=true}let s=d.summary||{};$('mCount').textContent=Number(s.count||0).toLocaleString();$('mStatus').textContent=`${s.success||0} success · ${s.failed||0} failed`;$('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);$('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);$('count').textContent=`${d.total||0} matching records`;$('page').textContent=`Page ${d.page||1} of ${d.pages||1}`;$('prev').disabled=state.page<=1;$('next').disabled=state.page>=state.pages;
+$('rows').innerHTML=(d.items||[]).map(x=>`<tr data-id="${x.id}"><td>${esc(date(x.finish_time))}</td><td>${esc(x.file_name)}${x.imported?' <span class="muted">(legacy)</span>':''}</td><td>${esc(x.library_name||'—')}</td><td class="${x.success?'good':'bad'}">${x.success?'Success':'Failed'}</td><td>${esc(x.source_codec||'—')}</td><td>${esc(x.dest_codec||'—')}</td><td class="num">${esc(humanBytes(x.source_size))}</td><td class="num">${esc(humanBytes(x.dest_size))}</td><td class="num">${esc(humanBytes(x.bytes_saved))}</td><td class="num">${esc(pct(x.percent_saved))}</td><td>${esc(humanTime(x.duration))}</td><td>${esc(x.worker||'—')}</td></tr>`).join('')||'<tr><td colspan="12">No records match these filters.</td></tr>';document.querySelectorAll('tbody tr[data-id]').forEach(tr=>tr.onclick=()=>details(tr.dataset.id))}
+async function details(id){let r=await fetch(base()+'details?'+new URLSearchParams({id}));let x=(await r.json()).item;if(!x)return;let fields=[['Finished',date(x.finish_time)],['Status',x.success?'Success':'Failed'],['Library',x.library_name||'—'],['Worker',x.worker||'—'],['Input codec',x.source_codec||'—'],['Output codec',x.dest_codec||'—'],['Input profile',x.source_profile||'—'],['Output profile',x.dest_profile||'—'],['Input resolution',x.source_width?`${x.source_width}×${x.source_height}`:'—'],['Output resolution',x.dest_width?`${x.dest_width}×${x.dest_height}`:'—'],['Input pixel format',x.source_pix_fmt||'—'],['Output pixel format',x.dest_pix_fmt||'—'],['Input audio',x.source_audio||'—'],['Output audio',x.dest_audio||'—'],['Before',humanBytes(x.source_size)],['After',humanBytes(x.dest_size)],['Saved',humanBytes(x.bytes_saved)],['Saved %',pct(x.percent_saved)],['Duration',humanTime(x.duration)],['Source path',x.source_path||'—'],['Destination path',x.dest_path||'—']];$('detailTitle').textContent=x.file_name||'Task details';$('detailGrid').innerHTML=fields.map(f=>`<div><span>${esc(f[0])}</span><strong>${esc(f[1])}</strong></div>`).join('');$('details').showModal()}
+$('apply').onclick=()=>{state.page=1;load()};$('refresh').onclick=load;$('reset').onclick=()=>{for(const id of['search','from','to','library','srcCodec','dstCodec','worker','minPct','maxPct'])$(id).value='';$('status').value='all';$('change').value='all';state.page=1;load()};$('prev').onclick=()=>{if(state.page>1){state.page--;load()}};$('next').onclick=()=>{if(state.page<state.pages){state.page++;load()}};$('close').onclick=()=>$('details').close();
+document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>{let n=th.dataset.sort;if(state.sort===n)state.dir=state.dir==='asc'?'desc':'asc';else{state.sort=n;state.dir='desc'}state.page=1;load()});
+$('import').onclick=async()=>{if(!confirm('Import existing history from the official File Size Metrics plugin? Existing imported rows will be skipped.'))return;let r=await fetch(base()+'importLegacy');let d=await r.json();notice(d.message||'Import complete');state.loaded=false;for(const id of['library','srcCodec','dstCodec','worker'])while($(id).options.length>1)$(id).remove(1);load()};
+$('export').onclick=async()=>{let r=await fetch(base()+'export?'+qs());let b=await r.blob();let a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='unmanic-file-size-metrics.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};load();
+</script></body></html>
