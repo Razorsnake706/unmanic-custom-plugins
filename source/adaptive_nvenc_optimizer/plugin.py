@@ -1576,6 +1576,15 @@ def _start_sample_test(arguments):
     plan = _sample_plan({"id": metric_id})
     if not plan.get("success"):
         return plan
+
+    existing_review = plan.get("existing_review")
+    if existing_review:
+        return {
+            "success": False,
+            "message": "A retained calibration run already exists for this file. Open Calibration Review instead of generating the clips again.",
+            "existing_run_id": existing_review.get("id"),
+        }
+
     if not (plan.get("plan") or {}).get("can_execute_safely"):
         return {
             "success": False,
