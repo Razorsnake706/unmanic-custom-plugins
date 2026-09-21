@@ -1910,6 +1910,8 @@ def _schedule_deferred_quality(run_id):
 
 def _calibration_run_payload(run):
     result = run.get("result") or {}
+    if result.get("calibration_discarded"):
+        return None
     if not run.get("success") or not run.get("keep_files") or not result.get("retained"):
         return None
 
@@ -2023,6 +2025,7 @@ def _calibration_run_payload(run):
         "quality_completed": _int(result.get("quality_completed")) or 0,
         "quality_error": result.get("quality_error"),
         "quality_seconds": _float(result.get("quality_seconds")),
+        "bundle": _bundle_state_for_run(run.get("id")),
         "samples": sample_rows,
         "revealed": revealed,
     }
@@ -2048,6 +2051,12 @@ def _calibration_runs():
             item["result"] = {}
         payload = _calibration_run_payload(item)
         if payload:
+            try:
+                bundle = _start_calibration_bundle({"run_id": item.get("id")})
+                if bundle.get("success"):
+                    payload["bundle"] = bundle.get("job")
+            except Exception:
+                logger.exception("Unable to auto-start calibration ZIP build")
             runs.append(payload)
 
     rated = []
@@ -2079,6 +2088,8 @@ def _calibration_runs():
             run_result = json.loads(run_row["result_json"] or "{}")
         except Exception:
             run_result = {}
+        if run_result.get("calibration_discarded"):
+            continue
         candidate_count = len(set(int(qp) for qp in (run_result.get("qp_values") or [])))
         if candidate_count and rating_count_by_run.get(run_row["id"], 0) >= candidate_count:
             completed_review_runs += 1
@@ -2088,6 +2099,8 @@ def _calibration_runs():
             result = json.loads(row["result_json"] or "{}")
         except Exception:
             result = {}
+        if result.get("calibration_discarded"):
+            continue
         summary = next(
             (
                 item for item in (result.get("qp_summary") or [])
@@ -2125,6 +2138,15 @@ def _calibration_runs():
             return None
         return {"min": min(values), "max": max(values), "mean": _mean(values)}
 
+    discarded_runs = 0
+    for run_row in all_successful_runs:
+        try:
+            run_result = json.loads(run_row["result_json"] or "{}")
+        except Exception:
+            run_result = {}
+        if run_result.get("calibration_discarded"):
+            discarded_runs += 1
+
     return {
         "success": True,
         "runs": runs,
@@ -2135,6 +2157,7 @@ def _calibration_runs():
             "accepted": len(accepted),
             "borderline": len(borderline),
             "unacceptable": len(rejected),
+            "discarded_runs": discarded_runs,
             "accepted_xpsnr": metric_range(accepted, "xpsnr"),
             "accepted_ssim": metric_range(accepted, "ssim"),
             "rejected_xpsnr": metric_range(rejected, "xpsnr"),
