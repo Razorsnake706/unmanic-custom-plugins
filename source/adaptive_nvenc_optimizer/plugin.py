@@ -500,6 +500,8 @@ def _diagnose(row):
 
     return {
         "id": r.get("id"),
+        "task_id": r.get("task_id"),
+        "library_id": r.get("library_id"),
         "file_name": r.get("file_name"),
         "library_name": r.get("library_name"),
         "finish_time": r.get("finish_time"),
@@ -1578,6 +1580,46 @@ def _overview(arguments):
         ).fetchall()
 
         analyzed = [_diagnose(row) for row in rows]
+
+        reference_by_task = {}
+        reference_by_path = {}
+        try:
+            _cleanup_reference_captures(settings)
+            with _optimizer_db() as opt_conn:
+                reference_rows = opt_conn.execute(
+                    """
+                    SELECT * FROM reference_captures
+                    WHERE status IN ('ready','retained','tested')
+                    ORDER BY created DESC
+                    """
+                ).fetchall()
+            for ref_row in reference_rows:
+                capture = _capture_record(ref_row)
+                if not capture or not capture.get("available"):
+                    continue
+                task_key = _int(capture.get("task_id"))
+                if task_key is not None and task_key not in reference_by_task:
+                    reference_by_task[task_key] = capture
+                path_key = capture.get("source_path")
+                if path_key and path_key not in reference_by_path:
+                    reference_by_path[path_key] = capture
+        except Exception:
+            logger.exception("Unable to annotate optimizer rows with reference captures")
+
+        for item in analyzed:
+            capture = None
+            task_key = _int(item.get("task_id"))
+            if task_key is not None:
+                capture = reference_by_task.get(task_key)
+            if capture is None:
+                capture = reference_by_path.get(item.get("source_path"))
+            item["reference_ready"] = bool(capture)
+            item["reference_clip_count"] = (
+                len((capture.get("manifest") or {}).get("clips") or [])
+                if capture else 0
+            )
+            item["reference_expires"] = capture.get("expires") if capture else None
+
         complete = [x for x in analyzed if x.get("training_eligible")]
         qps = [_float(x.get("encoder_quality")) for x in complete]
         reductions = [_float(x.get("percent_saved")) for x in complete]
@@ -1653,6 +1695,7 @@ def _overview(arguments):
                 "metrics_db_mtime": db_mtime,
                 "metrics_wal_mtime": wal_mtime,
                 "sort_mode": sort_mode,
+                "reference_ready": sum(1 for x in analyzed if x.get("reference_ready")),
             },
             "candidates": candidates,
             "learning_mode": True,
