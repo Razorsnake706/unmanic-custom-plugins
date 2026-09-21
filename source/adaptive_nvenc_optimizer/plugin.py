@@ -1757,6 +1757,7 @@ def _calibration_runs():
             runs.append(payload)
 
     rated = []
+    completed_review_runs = 0
     with _optimizer_db() as conn:
         rating_rows = conn.execute(
             """
@@ -1767,6 +1768,26 @@ def _calibration_runs():
             WHERE s.success=1
             """
         ).fetchall()
+        all_successful_runs = conn.execute(
+            """
+            SELECT id, result_json
+            FROM sample_runs
+            WHERE success=1
+            """
+        ).fetchall()
+
+    rating_count_by_run = {}
+    for row in rating_rows:
+        rating_count_by_run[row["run_id"]] = rating_count_by_run.get(row["run_id"], 0) + 1
+
+    for run_row in all_successful_runs:
+        try:
+            run_result = json.loads(run_row["result_json"] or "{}")
+        except Exception:
+            run_result = {}
+        candidate_count = len(set(int(qp) for qp in (run_result.get("qp_values") or [])))
+        if candidate_count and rating_count_by_run.get(run_row["id"], 0) >= candidate_count:
+            completed_review_runs += 1
 
     for row in rating_rows:
         try:
@@ -1815,7 +1836,7 @@ def _calibration_runs():
         "runs": runs,
         "summary": {
             "retained_runs": len(runs),
-            "completed_runs": sum(1 for run in runs if run.get("completed")),
+            "completed_runs": completed_review_runs,
             "ratings": len(rated),
             "accepted": len(accepted),
             "borderline": len(borderline),
