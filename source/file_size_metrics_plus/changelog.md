@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12
+
+- Fixed direct self-update again by using the same installed-plugin update route that Unmanic's normal Plugins page uses.
+- The updater now looks up File Size Metrics Plus' installed database-table ID and calls `/api/v2/plugins/update` with that ID.
+- This avoids using the install-by-plugin-ID endpoint for an already installed plugin, which was producing a Tornado traceback during self-update.
+- Kept post-update version verification so a transient response during plugin reload is not reported as a failure when the update actually completed.
+
 ## 0.1.11
 
 - Improved bitrate collection for MKV/Matroska streams where ffprobe does not populate `stream.bit_rate`.
