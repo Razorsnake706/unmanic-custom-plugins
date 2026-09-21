@@ -190,6 +190,57 @@ def _bit_depth(video):
     return None
 
 
+def _duration_tag_seconds(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        parts = text.split(":")
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        return float(text)
+    except Exception:
+        return None
+
+
+def _stream_bitrate(stream, fallback_duration=None):
+    direct = _num(stream.get("bit_rate"))
+    if direct:
+        return direct
+
+    tags = stream.get("tags") or {}
+    upper = {str(k).upper(): v for k, v in tags.items()}
+
+    # Matroska/MKVToolNix commonly stores per-stream bitrate in BPS tags even
+    # when ffprobe's stream.bit_rate field is empty.
+    for key, value in upper.items():
+        if key == "BPS" or key.startswith("BPS-") or key.startswith("BPS_"):
+            parsed = _num(value)
+            if parsed:
+                return parsed
+
+    # Fall back to NUMBER_OF_BYTES / stream duration when available.
+    byte_count = None
+    for key, value in upper.items():
+        if key == "NUMBER_OF_BYTES" or key.startswith("NUMBER_OF_BYTES-") or key.startswith("NUMBER_OF_BYTES_"):
+            byte_count = _num(value)
+            if byte_count:
+                break
+
+    stream_duration = _float(stream.get("duration"))
+    if not stream_duration:
+        for key, value in upper.items():
+            if key == "DURATION" or key.startswith("DURATION-") or key.startswith("DURATION_"):
+                stream_duration = _duration_tag_seconds(value)
+                if stream_duration:
+                    break
+    stream_duration = stream_duration or fallback_duration
+
+    if byte_count and stream_duration:
+        return int((byte_count * 8) / stream_duration)
+    return None
+
+
 def _probe(path):
     if not path or not os.path.exists(path):
         return {}
@@ -209,6 +260,8 @@ def _probe(path):
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
 
+    duration = _float(fmt.get("duration")) or _float(video.get("duration"))
+
     audios = []
     audio_bitrates = []
     audio_details = []
@@ -218,7 +271,7 @@ def _probe(path):
             label += f" {s.get('profile')}"
         if s.get("channels"):
             label += f" {s.get('channels')}ch"
-        bit_rate = _num(s.get("bit_rate"))
+        bit_rate = _stream_bitrate(s, duration)
         if bit_rate:
             audio_bitrates.append(bit_rate)
             label += f" {round(bit_rate / 1000)}kbps"
@@ -236,7 +289,6 @@ def _probe(path):
             "sample_rate": _num(s.get("sample_rate")),
         })
 
-    duration = _float(fmt.get("duration")) or _float(video.get("duration"))
     actual_size = _size(path)
     total_bitrate = _num(fmt.get("bit_rate"))
     if duration and actual_size:
@@ -245,7 +297,7 @@ def _probe(path):
         total_bitrate = int((actual_size * 8) / duration)
 
     audio_bitrate = sum(audio_bitrates) if audio_bitrates else None
-    video_bitrate = _num(video.get("bit_rate"))
+    video_bitrate = _stream_bitrate(video, duration)
     if video_bitrate is None and total_bitrate is not None and audio_bitrate is not None:
         estimate = total_bitrate - audio_bitrate
         video_bitrate = estimate if estimate > 0 else None
