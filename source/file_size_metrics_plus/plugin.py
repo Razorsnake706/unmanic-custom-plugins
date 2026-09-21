@@ -659,17 +659,86 @@ def _import_legacy():
 
 
 def _matching_ids(arguments):
-    where, params = _where(arguments)
+    selection = str(_arg(arguments, "selection", "all") or "all").strip().lower()
+    selection_value = str(_arg(arguments, "selection_value", "") or "").strip()
+
+    # Quick-select categories should replace the active filter for their own
+    # dimension while preserving every other active filter. For example,
+    # choosing "Worker: local" still respects date/search/codec filters even if
+    # a different worker happened to be selected in the normal filter bar.
+    effective = dict(arguments or {})
+    override_keys = {
+        "status_success": "status",
+        "status_failed": "status",
+        "size_saved": "change",
+        "size_grew": "change",
+        "size_same": "change",
+        "library": "library",
+        "worker": "worker",
+        "source_codec": "source_codec",
+        "dest_codec": "dest_codec",
+    }
+    override_key = override_keys.get(selection)
+    if override_key:
+        effective[override_key] = ""
+
+    where, params = _where(effective)
+    extra = []
+    extra_params = []
+
+    if selection == "legacy":
+        extra.append("imported=1")
+    elif selection == "status_success":
+        extra.append("success=1")
+    elif selection == "status_failed":
+        extra.append("success=0")
+    elif selection == "size_saved":
+        extra.append("bytes_saved>0")
+    elif selection == "size_grew":
+        extra.append("bytes_saved<0")
+    elif selection == "size_same":
+        extra.append("bytes_saved=0")
+    elif selection == "library":
+        library_id = _num(selection_value)
+        if library_id is None:
+            return {"success": False, "count": 0, "ids": [], "message": "Invalid library selection."}
+        extra.append("library_id=?")
+        extra_params.append(library_id)
+    elif selection == "worker":
+        if not selection_value:
+            return {"success": False, "count": 0, "ids": [], "message": "Invalid worker selection."}
+        extra.append("worker=?")
+        extra_params.append(selection_value)
+    elif selection == "source_codec":
+        if not selection_value:
+            return {"success": False, "count": 0, "ids": [], "message": "Invalid input codec selection."}
+        extra.append("source_codec=?")
+        extra_params.append(selection_value)
+    elif selection == "dest_codec":
+        if not selection_value:
+            return {"success": False, "count": 0, "ids": [], "message": "Invalid output codec selection."}
+        extra.append("dest_codec=?")
+        extra_params.append(selection_value)
+    elif selection not in ("", "all"):
+        return {"success": False, "count": 0, "ids": [], "message": "Unknown quick-selection type."}
+
+    if extra:
+        where += (" AND " if where else " WHERE ") + " AND ".join(extra)
+        params += extra_params
+
     with _db() as conn:
         rows = conn.execute(
             "SELECT id FROM metrics" + where + " ORDER BY finish_time DESC, id DESC",
             params,
         ).fetchall()
+
     ids = [int(row["id"]) for row in rows]
     return {
         "success": True,
         "count": len(ids),
         "ids": ids,
+        "selection": selection,
+        "selection_value": selection_value,
     }
 
 
