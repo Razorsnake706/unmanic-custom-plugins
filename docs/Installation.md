@@ -76,3 +76,25 @@ Open the optimizer data panel.
 It should display NVENC record count, training-ready count, average reduction, median QP, average encode speed, baseline status, diagnosis counts and an Encode Advisor table.
 
 The optimizer remains read-only until later adaptive phases are deliberately enabled.
+
+## Enable Adaptive in GPU video libraries
+
+Starting with the pre-encode reference-capture phase, Adaptive NVENC Optimizer must also be enabled in the library's **Worker Processing** plugin flow.
+
+Recommended order:
+
+~~~text
+Adaptive NVENC Optimizer
+        |
+        v
+Transcode Video Files
+        |
+        v
+other worker-processing plugins
+~~~
+
+Adaptive should be before the normal video transcoder so `file_in` still points at the untouched library source when the reference clips are captured.
+
+Do not add Adaptive to a separate audio-only library unless that library also owns the video-transcode workflow you want to calibrate.
+
+`Keep calibration/test sample files` does **not** need to be enabled for normal data collection. Leave it OFF unless you specifically want to keep the reference/QP clips for visual A/B inspection.
