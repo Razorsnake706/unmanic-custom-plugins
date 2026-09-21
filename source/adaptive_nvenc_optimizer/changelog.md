@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- Replaced the narrow first-pass calibration ladder with a **coarse boundary-search ladder**. A typical QP 28 source now tests QP 28 / 34 / 40 / 46 instead of 28 / 31 / 34 / 37.
+- The wider ladder is designed to make at least one candidate visibly worse on ordinary 1080p material, making subjective calibration easier and reducing guesswork.
+- Added **All candidates look indistinguishable** to Calibration Review. This records the result directly instead of forcing the reviewer to invent differences that are not visible.
+- When every candidate is marked indistinguishable, Adaptive treats the run as **no visible boundary found yet** and targets the highest tested QP for objective XPSNR/SSIM scoring.
+- Added boundary-search strategy metadata to sample plans so future calibration rounds can narrow or extend the QP range intelligently.
+- Kept the maximum calibration QP bounded at 51.
+
 ## 0.6.1
 
 - Added **Discard as unsuitable source** inside Calibration Review for media that is a poor subjective test source, such as material where the candidates are too visually similar to judge confidently.
