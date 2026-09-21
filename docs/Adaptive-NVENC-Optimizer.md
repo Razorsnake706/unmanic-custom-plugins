@@ -197,3 +197,19 @@ saved subjective/objective calibration data
 ~~~
 
 The objective-scoring stage remains CPU-heavy, but it now runs after the clips are available and usually evaluates far fewer candidate variants than the original all-QP/all-metric implementation.
+
+## Persistent Calibration Review and clip downloads
+
+Retained calibration clips are tied to the Metrics Plus record that produced them. Closing the sample-test dialog or navigating away from the Adaptive page does **not** require regenerating those clips. Reopening the same advisor row shows **Open Calibration Review** when a retained run already exists. If candidate generation is still running, reopening the row reconnects to the active job and resumes progress display.
+
+Calibration Review now starts with the subjective rating controls, followed by the clip downloads. Each sample position has **Download Reference** and **Download Candidate A/B/C/D** buttons, and the review also has **Download all clips (.zip)**. The ZIP keeps the review blind and uses folders such as `Sample 01/Reference.mkv` and `Sample 01/Candidate A.mkv`; it does not include the Candidate-to-QP mapping.
+
+The rating buttons are:
+
+- Indistinguishable
+- Acceptable
+- Borderline
+- Unacceptable
+- Unreviewable
+
+Rate each candidate once after comparing it against the reference across all sample positions. The real QP mapping remains hidden until all candidates have ratings.
