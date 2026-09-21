@@ -23,7 +23,7 @@ body{margin:0;background:inherit;color:var(--text)}
 .actions,.filters{display:flex;flex-wrap:wrap;gap:8px}
 .btn,input,select{border:1px solid #c8d0d9;border-radius:7px;padding:8px 10px;background:#fff;color:#17202a}
 .dark .btn,.dark input,.dark select{background:#1a222c;color:#e7edf4;border-color:#394654}
-.btn{cursor:pointer}.primary{background:#2676d8;color:white;border-color:#2676d8}
+.btn{cursor:pointer}.primary{background:#2676d8;color:white;border-color:#2676d8}input[type="checkbox"]{min-width:auto;padding:0;margin:0;accent-color:#2676d8;vertical-align:middle}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
 .card,.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
 .metric{font-size:23px;font-weight:700;margin-top:4px}
@@ -78,7 +78,7 @@ if(themeParams.get('theme')==='dark')document.documentElement.className='dark';
 <div id="notice" class="notice hidden"></div>
 
 <section class="cards">
-<div class="card"><div class="muted">Files</div><div id="mCount" class="metric">0</div><div id="mStatus" class="muted"></div></div>
+<div class="card"><div id="mCountLabel" class="muted">Processing tasks</div><div id="mCount" class="metric">0</div><div id="mStatus" class="muted"></div></div>
 <div class="card"><div class="muted">Before</div><div id="mBefore" class="metric">0 B</div></div>
 <div class="card"><div class="muted">After</div><div id="mAfter" class="metric">0 B</div></div>
 <div class="card"><div class="muted">Saved</div><div id="mSaved" class="metric">0 B</div></div>
@@ -270,8 +270,9 @@ async function load(){
     syncSelect($('worker'),d.options?.workers||[],'All workers');
 
     const s=d.summary||{};
+    $('mCountLabel').textContent=d.combined?'Media items':'Processing tasks';
     $('mCount').textContent=Number(s.count||0).toLocaleString();
-    $('mStatus').textContent=`${s.success||0} success · ${s.failed||0} failed`;
+    $('mStatus').textContent=(s.success||0)+' success · '+(s.failed||0)+' failed'+(d.combined?' · '+(s.passes||0)+' passes':'');
     $('mBefore').textContent=humanBytes(s.source||0);$('mAfter').textContent=humanBytes(s.dest||0);
     $('mSaved').textContent=humanBytes(s.saved||0);$('mPct').textContent=pct(s.percent);$('mTime').textContent=humanTime(s.duration||0);
     updateTotalChart(s);
