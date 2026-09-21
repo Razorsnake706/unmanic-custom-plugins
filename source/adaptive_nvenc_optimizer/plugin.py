@@ -2096,8 +2096,19 @@ def _calibration_runs():
             """
         ).fetchall()
 
+    excluded_run_ids = set()
+    for run_row in all_successful_runs:
+        try:
+            run_result = json.loads(run_row["result_json"] or "{}")
+        except Exception:
+            run_result = {}
+        if run_result.get("calibration_excluded"):
+            excluded_run_ids.add(run_row["id"])
+
     rating_count_by_run = {}
     for row in rating_rows:
+        if row["run_id"] in excluded_run_ids:
+            continue
         rating_count_by_run[row["run_id"]] = rating_count_by_run.get(row["run_id"], 0) + 1
 
     for run_row in all_successful_runs:
@@ -2112,6 +2123,8 @@ def _calibration_runs():
             completed_review_runs += 1
 
     for row in rating_rows:
+        if row["run_id"] in excluded_run_ids:
+            continue
         try:
             result = json.loads(row["result_json"] or "{}")
         except Exception:
