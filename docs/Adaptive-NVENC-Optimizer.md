@@ -169,3 +169,31 @@ After all candidates are rated, the panel reveals the real QP, XPSNR, SSIM and b
 After review, **Delete retained files** removes the reference/candidate video files while keeping the numerical results and ratings. This prevents calibration media from accumulating indefinitely.
 
 The panel also shows observed quality ranges from reviewed candidates. These are diagnostic ranges only; automatic QP selection will not use a learned threshold until enough diverse reviewed runs exist.
+
+## Fast calibration mode
+
+When `Keep calibration/test sample files` is ON, candidate generation now prioritizes getting the clips ready for human review quickly. The P1000 generates the QP candidates first and **does not** run XPSNR/SSIM across all 16 variants before the review starts.
+
+Open **Calibration Review** (or click **Review retained clips** immediately after generation). Each sample position has explicit **Download Reference** and **Download Candidate A/B/C/D** buttons. The files download to the browser's normal download location and should be viewed in VLC or another player with reliable HEVC/MKV support.
+
+After every blind candidate has an overall rating, Adaptive reveals the Candidate-to-QP mapping and schedules objective quality scoring in the background. To reduce CPU work, it measures only the useful subjective boundary: the highest Indistinguishable/Acceptable QP, the first Unacceptable QP, and any Borderline QPs. XPSNR and SSIM are calculated together in one FFmpeg comparison pass.
+
+This changes the calibration sequence to:
+
+~~~text
+GPU candidate generation
+        |
+        v
+clips ready for blind review
+        |
+        v
+human A/B/C/D ratings
+        |
+        v
+targeted boundary XPSNR + SSIM
+        |
+        v
+saved subjective/objective calibration data
+~~~
+
+The objective-scoring stage remains CPU-heavy, but it now runs after the clips are available and usually evaluates far fewer candidate variants than the original all-QP/all-metric implementation.
