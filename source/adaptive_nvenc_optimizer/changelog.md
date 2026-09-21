@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Added a **Calibration Review** section to the Adaptive data panel.
+- Retained calibration runs are reviewed blind as Candidate A/B/C/D so QP values and objective scores do not bias the subjective rating.
+- Added downloadable reference and candidate MKV clips for every retained sample position.
+- Added subjective ratings: Indistinguishable, Acceptable, Borderline, Unacceptable, and Unreviewable.
+- Candidate-to-QP mappings and XPSNR/SSIM/bitrate results are revealed only after every candidate in the run has been rated.
+- Added persistent subjective rating storage in `adaptive_optimizer.db` and early observed accepted/rejected quality ranges for future threshold learning.
+- Added a cleanup button that deletes retained video files after review while preserving objective results and subjective ratings.
+- Updated the sample-retention setting text to clarify that it should be enabled during human calibration.
+
 ## 0.3.0
 
 - Added a real Unmanic `on_worker_process` runner so Adaptive NVENC Optimizer can be enabled in GPU video libraries.
