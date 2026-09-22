@@ -1,3 +1,11 @@
+## 0.2.0
+
+- Add drag-and-drop plugin reordering while keeping the up/down controls.
+- Persist the selected manual library, source/settings library, browse path, plugin order, and checked plugins in the browser.
+- Restore the last browsed source folder when the panel is reopened.
+- Fix select/dropdown option colors for Unmanic dark mode while retaining light-mode support.
+- Improve plugin-row drag feedback and preserve checked state while reordering.
+
 ## 0.1.0
 
 - Initial release.
