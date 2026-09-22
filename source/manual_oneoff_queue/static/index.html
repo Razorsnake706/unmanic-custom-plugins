@@ -14,8 +14,14 @@
     .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 12px; }
     label { display: block; font-weight: 650; margin-bottom: 6px; }
     select, button, input { font: inherit; }
-    select, input[type=text] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 7px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); background: transparent; }
-    button { padding: 7px 11px; border-radius: 7px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); cursor: pointer; }
+    select, input[type=text] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 7px; border: 1px solid #4b4b4b; background: #171717; color: #f2f2f2; }
+    select option { background: #171717; color: #f2f2f2; }
+    button { padding: 7px 11px; border-radius: 7px; border: 1px solid #4b4b4b; background: #202020; color: #f2f2f2; cursor: pointer; }
+    @media (prefers-color-scheme: light) {
+      select, input[type=text] { background: #ffffff; color: #111111; border-color: #b8b8b8; }
+      select option { background: #ffffff; color: #111111; }
+      button { background: #f5f5f5; color: #111111; border-color: #b8b8b8; }
+    }
     button.primary { font-weight: 700; padding: 10px 18px; }
     button:disabled { opacity: .45; cursor: default; }
     .status { margin-top: 7px; font-size: .92rem; }
@@ -30,7 +36,11 @@
     .name { overflow-wrap: anywhere; }
     .meta { opacity: .66; font-size: .84rem; }
     .selected-file { overflow-wrap: anywhere; padding: 9px; border-radius: 7px; background: color-mix(in srgb, currentColor 7%, transparent); }
-    .plugin-row { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; }
+    .plugin-row { display: grid; grid-template-columns: auto auto 1fr auto; gap: 9px; align-items: center; }
+    .plugin-row.dragging { opacity: .45; }
+    .plugin-row.drag-over { outline: 2px solid color-mix(in srgb, currentColor 45%, transparent); outline-offset: -2px; }
+    .drag-handle { cursor: grab; user-select: none; opacity: .62; font-size: 1.15rem; padding: 2px 3px; }
+    .drag-handle:active { cursor: grabbing; }
     .plugin-actions { display: flex; gap: 4px; }
     .plugin-actions button { padding: 3px 8px; }
     .breadcrumb { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
@@ -76,7 +86,7 @@
       <label style="margin:0" class="grow">Plugins for this task</label>
       <button id="clearPlugins">Clear</button>
     </div>
-    <div class="tiny" style="margin-bottom:8px">Check only the plugins you want. Use ↑/↓ to control execution order. Worker plugins run in this order; compatible postprocessor hooks are also delegated.</div>
+    <div class="tiny" style="margin-bottom:8px">Check only the plugins you want. Drag plugin rows to reorder them, or use ↑/↓ for precise movement. Worker plugins run in this order; compatible postprocessor hooks are also delegated.</div>
     <div id="plugins"></div>
   </div>
 
@@ -93,6 +103,32 @@
   let currentPath = '';
   let selectedPath = '';
   let pluginOrder = [];
+
+  const storageKeys = {
+    manualLib: 'manual_oneoff_queue.manual_library_id',
+    sourceLib: 'manual_oneoff_queue.source_library_id',
+    sourcePath: 'manual_oneoff_queue.source_path',
+    pluginOrder: 'manual_oneoff_queue.plugin_order',
+    selectedPlugins: 'manual_oneoff_queue.selected_plugins',
+  };
+
+  function loadStored(key, fallback='') {
+    try {
+      const value = localStorage.getItem(storageKeys[key]);
+      return value === null ? fallback : value;
+    } catch { return fallback; }
+  }
+
+  function saveStored(key, value) {
+    try { localStorage.setItem(storageKeys[key], value); } catch {}
+  }
+
+  function storedJson(key, fallback) {
+    try {
+      const raw = loadStored(key, '');
+      return raw ? JSON.parse(raw) : fallback;
+    } catch { return fallback; }
+  }
 
   async function api(action, opts={}) {
     const q = new URLSearchParams(opts.query || {});
@@ -127,10 +163,20 @@
         el.appendChild(o);
       }
     }
+    const storedManual = loadStored('manualLib');
+    const storedManualValid = libs.some(l => String(l.id)===storedManual && boot.manual_library_status?.[String(l.id)]?.safe);
     const safe = libs.find(l => boot.manual_library_status?.[String(l.id)]?.safe);
-    if (safe) $('manualLib').value=String(safe.id);
+    if (storedManualValid) $('manualLib').value=storedManual;
+    else if (safe) $('manualLib').value=String(safe.id);
+
+    const storedSource = loadStored('sourceLib');
+    const storedSourceValid = libs.some(l => String(l.id)===storedSource);
     const source = libs.find(l => String(l.id)!=$('manualLib').value) || libs[0];
-    if (source) $('sourceLib').value=String(source.id);
+    if (storedSourceValid) $('sourceLib').value=storedSource;
+    else if (source) $('sourceLib').value=String(source.id);
+
+    saveStored('manualLib', $('manualLib').value);
+    saveStored('sourceLib', $('sourceLib').value);
     renderManualStatus();
   }
 
@@ -144,13 +190,20 @@
 
   function renderPlugins() {
     const info = new Map((boot.plugins||[]).map(p=>[p.plugin_id,p]));
-    if (!pluginOrder.length) pluginOrder=(boot.plugins||[]).map(p=>p.plugin_id);
+    if (!pluginOrder.length) {
+      const storedOrder = storedJson('pluginOrder', []);
+      pluginOrder = storedOrder.length ? storedOrder : (boot.plugins||[]).map(p=>p.plugin_id);
+    }
+    const missing = (boot.plugins||[]).map(p=>p.plugin_id).filter(id=>!pluginOrder.includes(id));
+    pluginOrder = pluginOrder.filter(id=>info.has(id)).concat(missing);
+    saveStored('pluginOrder', JSON.stringify(pluginOrder));
+    const checkedBefore = selectedPlugins().length ? selectedPlugins() : storedJson('selectedPlugins', []);
     const box=$('plugins'); box.innerHTML='';
-    pluginOrder=pluginOrder.filter(id=>info.has(id));
     pluginOrder.forEach((id, idx) => {
       const p=info.get(id);
-      const row=document.createElement('div'); row.className='row plugin-row';
-      row.innerHTML=`<input type="checkbox" data-plugin-check="${id}">
+      const row=document.createElement('div'); row.className='row plugin-row'; row.draggable=true; row.dataset.pluginRow=id;
+      row.innerHTML=`<div class="drag-handle" title="Drag to reorder">⋮⋮</div>
+        <input type="checkbox" data-plugin-check="${id}">
         <div class="grow"><div class="name"><strong>${escapeHtml(p.name)}</strong></div>
         <div class="meta">${escapeHtml(p.plugin_id)} · ${escapeHtml((p.stages||[]).join(', '))}</div></div>
         <div class="plugin-actions"><button data-up="${id}" title="Move up">↑</button><button data-down="${id}" title="Move down">↓</button></div>`;
@@ -158,6 +211,11 @@
     });
     box.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>move(b.dataset.up,-1));
     box.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>move(b.dataset.down,1));
+    box.querySelectorAll('[data-plugin-check]').forEach(c=> {
+      c.checked=checkedBefore.includes(c.dataset.pluginCheck);
+      c.onchange=()=>saveStored('selectedPlugins', JSON.stringify(selectedPlugins()));
+    });
+    enableDragAndDrop();
   }
 
   function move(id, delta) {
@@ -165,12 +223,56 @@
     const i=pluginOrder.indexOf(id), j=i+delta;
     if(i<0||j<0||j>=pluginOrder.length)return;
     [pluginOrder[i],pluginOrder[j]]=[pluginOrder[j],pluginOrder[i]];
+    saveStored('pluginOrder', JSON.stringify(pluginOrder));
     renderPlugins();
     document.querySelectorAll('[data-plugin-check]').forEach(c=>c.checked=checked.includes(c.dataset.pluginCheck));
+    saveStored('selectedPlugins', JSON.stringify(checked));
   }
 
   function selectedPlugins() {
     return [...document.querySelectorAll('[data-plugin-check]:checked')].map(x=>x.dataset.pluginCheck);
+  }
+
+  function reorderPlugin(draggedId, targetId) {
+    if (!draggedId || !targetId || draggedId===targetId) return;
+    const checked = selectedPlugins();
+    const from = pluginOrder.indexOf(draggedId);
+    const to = pluginOrder.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    pluginOrder.splice(from, 1);
+    pluginOrder.splice(to, 0, draggedId);
+    saveStored('pluginOrder', JSON.stringify(pluginOrder));
+    renderPlugins();
+    document.querySelectorAll('[data-plugin-check]').forEach(c=>c.checked=checked.includes(c.dataset.pluginCheck));
+    saveStored('selectedPlugins', JSON.stringify(checked));
+  }
+
+  function enableDragAndDrop() {
+    const rows=[...document.querySelectorAll('[data-plugin-row]')];
+    rows.forEach(row=>{
+      row.addEventListener('dragstart', e=>{
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain', row.dataset.pluginRow);
+      });
+      row.addEventListener('dragend', ()=>{
+        row.classList.remove('dragging');
+        rows.forEach(r=>r.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', e=>{
+        e.preventDefault();
+        e.dataTransfer.dropEffect='move';
+        rows.forEach(r=>r.classList.remove('drag-over'));
+        if(!row.classList.contains('dragging')) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', ()=>row.classList.remove('drag-over'));
+      row.addEventListener('drop', e=>{
+        e.preventDefault();
+        const draggedId=e.dataTransfer.getData('text/plain');
+        row.classList.remove('drag-over');
+        reorderPlugin(draggedId, row.dataset.pluginRow);
+      });
+    });
   }
 
   function escapeHtml(s) {
@@ -182,6 +284,8 @@
     $('browser').innerHTML='<div class="row">Loading…</div>';
     try {
       const r=await api('browse',{query:{library_id:$('sourceLib').value,path:currentPath}});
+      currentPath=r.relative_path||'';
+      saveStored('sourcePath', currentPath);
       $('cwd').textContent=r.root + (r.relative_path ? '/' + r.relative_path : '');
       $('upBtn').disabled=!r.relative_path;
       $('upBtn').dataset.parent=r.parent||'';
@@ -205,16 +309,17 @@
     try {
       boot=await api('bootstrap');
       renderLibraries(); renderPlugins();
-      await browse('');
+      const storedPath = loadStored('sourcePath', '');
+      await browse(storedPath);
     } catch(err) {
       $('message').className='message bad'; $('message').textContent='Failed to load: '+err.message;
     }
   }
 
-  $('manualLib').onchange=renderManualStatus;
-  $('sourceLib').onchange=()=>{selectedPath='';$('selectedFile').textContent='None';browse('');};
+  $('manualLib').onchange=()=>{saveStored('manualLib',$('manualLib').value);renderManualStatus();};
+  $('sourceLib').onchange=()=>{saveStored('sourceLib',$('sourceLib').value);saveStored('sourcePath','');selectedPath='';$('selectedFile').textContent='None';browse('');};
   $('upBtn').onclick=()=>browse($('upBtn').dataset.parent||'');
-  $('clearPlugins').onclick=()=>document.querySelectorAll('[data-plugin-check]').forEach(x=>x.checked=false);
+  $('clearPlugins').onclick=()=>{document.querySelectorAll('[data-plugin-check]').forEach(x=>x.checked=false);saveStored('selectedPlugins','[]');};
   $('queueBtn').onclick=async()=>{
     const msg=$('message'); msg.textContent=''; msg.className='message';
     if(!selectedPath){msg.className='message bad';msg.textContent='Choose a media file first.';return;}
