@@ -18,16 +18,19 @@ Then refresh plugin repositories.
 
 ## Install the plugins
 
-Install:
+Install whichever plugins you need:
 
 ~~~text
 File Size Metrics Plus
 Adaptive NVENC Optimizer
+Manual One-Off Queue
 ~~~
 
 Metrics Plus should be installed first so it can begin collecting data immediately.
 
 The optimizer can be installed at any time. It reads whatever compatible history is already present.
+
+Manual One-Off Queue is independent of Metrics Plus history. It is useful for manually selecting one file and one plugin chain, especially while testing or calibrating encoder behavior.
 
 ## Why repo-v2.json is preferred
 
@@ -98,3 +101,25 @@ Adaptive should be before the normal video transcoder so `file_in` still points 
 Do not add Adaptive to a separate audio-only library unless that library also owns the video-transcode workflow you want to calibrate.
 
 `Keep calibration/test sample files` does **not** need to be enabled for normal data collection. Leave it OFF unless you specifically want to keep the reference/QP clips for visual A/B inspection.
+
+
+## Set up Manual One-Off Queue
+
+Create a dedicated manual-processing library rather than using your normal TV/Movie library directly.
+
+Recommended configuration:
+
+~~~text
+Name: Manual
+Path: /library
+Scanner: OFF
+Filesystem/inotify monitoring: OFF
+Worker processing plugins:
+  Manual One-Off Queue only
+~~~
+
+Then open the Manual One-Off Queue data panel and choose your normal TV/Movie library as the **Source / settings library**.
+
+The selected one-off task uses that source library's per-plugin settings without changing its normal plugin flow.
+
+See [Manual One-Off Queue](Manual-One-Off-Queue.md) for the full safety and ordering details.
