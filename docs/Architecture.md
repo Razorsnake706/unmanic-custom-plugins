@@ -41,6 +41,14 @@ Current responsibilities:
 
 Future responsibilities include representative scene selection, short GPU test encodes, objective image-quality comparison, QP search, storage-ROI decisions and automatic integration into the Unmanic worker pipeline.
 
+### Manual One-Off Queue
+
+Manual One-Off Queue is a task-scoped dispatch layer.
+
+It uses a dedicated scanner-disabled manual library so the normal TV/Movie plugin configuration is never temporarily rewritten. The panel stores the chosen source/settings library and selected plugin IDs for the one-off task, then the controller delegates the selected worker/postprocessor runners while presenting the source library ID to those delegated plugins so their existing per-library settings are reused.
+
+Its browser UI also persists the last selected libraries, browse path, plugin order, and checked plugins in browser local storage.
+
 ## Data flow
 
 ~~~text
@@ -68,8 +76,15 @@ Post-processing complete
             v
 Adaptive NVENC Optimizer
    +-- reads database
+   +-- captures references / calibration data
    +-- derives diagnostics
-   +-- later learns encoding decisions
+   +-- later learns bounded encoding decisions
+
+Manual One-Off Queue
+   +-- selects one source file
+   +-- chooses ordered plugins for that task
+   +-- reuses source-library plugin settings
+   +-- queues through an isolated manual library
 ~~~
 
 ## Database location
