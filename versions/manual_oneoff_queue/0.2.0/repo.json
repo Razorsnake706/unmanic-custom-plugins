@@ -25,7 +25,7 @@
                 "on_postprocessor_file_movement": 0,
                 "on_postprocessor_task_results": 0
             },
-            "tags": "data panel manual queue one-off task plugin selector",
+            "tags": "data panel manual queue one-off task plugin selector drag drop persistent",
             "version": "0.2.0"
         }
     ]
