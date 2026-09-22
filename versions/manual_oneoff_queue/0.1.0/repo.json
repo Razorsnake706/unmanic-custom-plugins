@@ -1,0 +1,32 @@
+{
+    "repo": {
+        "id": "repository.razorsnake706.manual_oneoff_queue.0.1.0",
+        "name": "Manual One-Off Queue 0.1.0 (pinned)",
+        "icon": "",
+        "repo_data_directory": "https://raw.githubusercontent.com/Razorsnake706/unmanic-custom-plugins/repo/versions/manual_oneoff_queue/0.1.0/",
+        "repo_data_url": "https://raw.githubusercontent.com/Razorsnake706/unmanic-custom-plugins/repo/versions/manual_oneoff_queue/0.1.0/repo.json"
+    },
+    "plugins": [
+        {
+            "author": "Razorsnake706",
+            "compatibility": [
+                1,
+                2
+            ],
+            "description": "Manual one-off queue controller for Unmanic. Browse a library, choose one movie or episode, select and order processing plugins for that task, and force-queue it without changing the normal library plugin flow.",
+            "icon": "https://raw.githubusercontent.com/Unmanic/plugin.video_transcoder/master/icon.png",
+            "id": "manual_oneoff_queue",
+            "name": "Manual One-Off Queue",
+            "platform": [
+                "all"
+            ],
+            "priorities": {
+                "on_worker_process": 0,
+                "on_postprocessor_file_movement": 0,
+                "on_postprocessor_task_results": 0
+            },
+            "tags": "data panel manual queue one-off task plugin selector",
+            "version": "0.1.0"
+        }
+    ]
+}
