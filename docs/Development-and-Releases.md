@@ -9,6 +9,7 @@ Contains source and documentation.
 ~~~text
 source/file_size_metrics_plus/
 source/adaptive_nvenc_optimizer/
+source/manual_oneoff_queue/
 docs/
 ~~~
 
@@ -81,7 +82,7 @@ repo-v2.json is the recommended user-facing URL.
 
 ## Versioning
 
-Each plugin has an independent version. A Metrics Plus release does not require an Adaptive Optimizer release, and vice versa.
+Each plugin has an independent version. A Metrics Plus, Adaptive Optimizer, or Manual One-Off Queue release does not require matching releases of the others.
 
 ## Rollback
 
@@ -91,7 +92,7 @@ The generated repo branch also contains version directories, but GitHub Release 
 
 ## Documentation maintenance
 
-When architecture or the adaptive phase changes, update the README and the relevant docs pages. The goal is for source control, not chat history, to be sufficient to resume development later.
+When architecture, the adaptive phase, or Manual One-Off Queue behavior changes, update the README and the relevant docs pages. The goal is for source control, not chat history, to be sufficient to resume development later.
 
 ## GitHub release notes
 
