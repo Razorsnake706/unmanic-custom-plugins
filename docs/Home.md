@@ -2,13 +2,15 @@
 
 Welcome to the documentation for **Razorsnake706 Unmanic Custom Plugins**.
 
-This repository contains two cooperating Unmanic plugins designed to make media compression measurable first and adaptive later.
+This repository contains three complementary Unmanic plugins for measurable compression, NVENC calibration, and controlled one-off processing.
 
 ## The short version
 
 **File Size Metrics Plus** records what happened during processing.
 
-**Adaptive NVENC Optimizer** reads that history, explains the results, and is being developed toward automatically choosing per-file GPU quality settings.
+**Adaptive NVENC Optimizer** reads that history, captures references, runs/reviews calibration tests, and is being developed toward bounded per-file GPU quality decisions.
+
+**Manual One-Off Queue** lets you select one media file and manually choose the plugin chain used for that single task.
 
 ~~~text
 media file
@@ -35,9 +37,10 @@ The plugins are intentionally separate. Metrics Plus remains useful even if the 
 2. [Architecture](Architecture.md)
 3. [File Size Metrics Plus](File-Size-Metrics-Plus.md)
 4. [Adaptive NVENC Optimizer](Adaptive-NVENC-Optimizer.md)
-5. [Adaptive Encoding Roadmap](Adaptive-Roadmap.md)
-6. [Troubleshooting and Recovery](Troubleshooting-and-Recovery.md)
-7. [Development and Releases](Development-and-Releases.md)
+5. [Manual One-Off Queue](Manual-One-Off-Queue.md)
+6. [Adaptive Encoding Roadmap](Adaptive-Roadmap.md)
+7. [Troubleshooting and Recovery](Troubleshooting-and-Recovery.md)
+8. [Development and Releases](Development-and-Releases.md)
 
 ## Preferred Unmanic repository URL
 
@@ -49,7 +52,7 @@ Use repo-v2.json rather than the original repo.json when setting up a fresh inst
 
 ## Current adaptive state
 
-The optimizer is still in **learning mode**. It reads Metrics Plus data and produces diagnoses, but does not alter files or encoder settings.
+The optimizer is in the **reference capture + calibration/review** phase. It can prepare and evaluate short test samples while the normal full-file encoder remains under explicit user control. The long-term automatic decision path is still being introduced conservatively.
 
 The intended progression is deliberately conservative:
 
