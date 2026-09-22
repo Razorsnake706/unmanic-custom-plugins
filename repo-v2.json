@@ -51,7 +51,7 @@
                 1,
                 2
             ],
-            "description": "Manual one-off queue controller for Unmanic. Browse a library, choose one movie or episode, select and order processing plugins for that task, and force-queue it without changing the normal library plugin flow.",
+            "description": "Manual one-off queue controller for Unmanic. Browse a library, choose one movie or episode, select and drag-reorder processing plugins for that task, and preserve your last library/path choices between visits.",
             "icon": "https://raw.githubusercontent.com/Unmanic/plugin.video_transcoder/master/icon.png",
             "id": "manual_oneoff_queue",
             "name": "Manual One-Off Queue",
@@ -64,7 +64,7 @@
                 "on_postprocessor_task_results": 0
             },
             "tags": "data panel manual queue one-off task plugin selector",
-            "version": "0.1.0"
+            "version": "0.2.0"
         }
     ]
 }
