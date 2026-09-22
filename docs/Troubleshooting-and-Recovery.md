@@ -91,10 +91,33 @@ If all conversational context is lost:
 2. Read docs/Architecture.md
 3. Read docs/Adaptive-Roadmap.md
 4. Check current versions in source/*/info.json
-5. Check plugin.py and static/index.html for both plugins
+5. Check plugin.py and static/index.html for all current plugins
 6. Read recent changelogs
 7. Verify repo-v2.json on the repo branch
 8. Inspect .github/workflows/publish.yml
 ~~~
 
 That is enough to understand what exists, what is safe, and what phase the adaptive project is in.
+
+
+## Manual One-Off Queue says the manual library is unsafe
+
+Verify the dedicated manual library has both scanning and filesystem/inotify monitoring disabled.
+
+Its worker-processing flow should contain only:
+
+~~~text
+Manual One-Off Queue
+~~~
+
+The video/audio plugins you want for an individual task are selected inside the panel; they should not also be enabled directly on the Manual library's worker flow.
+
+## Manual One-Off Queue forgets the selected TV/movie folder
+
+Version 0.2.0 and newer stores the selected manual library, source/settings library, last browse path, plugin order, and checked plugins in browser local storage.
+
+If those settings reset, check whether the browser is clearing site data, running in a private session, or using a different browser/profile. If the stored folder no longer exists, return to the library root and browse to a valid folder.
+
+## Manual One-Off Queue dropdown is white in dark mode
+
+Upgrade to version 0.2.0 or newer. That release explicitly styles both the select control and its option list for dark and light themes.
