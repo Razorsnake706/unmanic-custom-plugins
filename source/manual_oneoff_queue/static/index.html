@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Manual One-Off Queue</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { margin: 0; padding: 18px; background: transparent; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .sub { opacity: .72; margin-bottom: 18px; }
+    .card { border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; padding: 14px; margin: 12px 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 12px; }
+    label { display: block; font-weight: 650; margin-bottom: 6px; }
+    select, button, input { font: inherit; }
+    select, input[type=text] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 7px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); background: transparent; }
+    button { padding: 7px 11px; border-radius: 7px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); cursor: pointer; }
+    button.primary { font-weight: 700; padding: 10px 18px; }
+    button:disabled { opacity: .45; cursor: default; }
+    .status { margin-top: 7px; font-size: .92rem; }
+    .good { color: #2f9e44; }
+    .bad { color: #d9480f; }
+    .browser { border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 8px; overflow: hidden; max-height: 430px; overflow-y: auto; }
+    .row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, currentColor 11%, transparent); }
+    .row:last-child { border-bottom: none; }
+    .row.clickable { cursor: pointer; }
+    .row.clickable:hover { background: color-mix(in srgb, currentColor 7%, transparent); }
+    .grow { flex: 1; min-width: 0; }
+    .name { overflow-wrap: anywhere; }
+    .meta { opacity: .66; font-size: .84rem; }
+    .selected-file { overflow-wrap: anywhere; padding: 9px; border-radius: 7px; background: color-mix(in srgb, currentColor 7%, transparent); }
+    .plugin-row { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; }
+    .plugin-actions { display: flex; gap: 4px; }
+    .plugin-actions button { padding: 3px 8px; }
+    .breadcrumb { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .tiny { font-size: .84rem; opacity: .7; }
+    .message { margin-top: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Manual One-Off Queue</h1>
+  <div class="sub">Pick one movie/episode, choose exactly which installed processing plugins should run, and add only that file to Unmanic.</div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label for="manualLib">Manual processing library</label>
+        <select id="manualLib"></select>
+        <div id="manualStatus" class="status"></div>
+      </div>
+      <div>
+        <label for="sourceLib">Source / settings library</label>
+        <select id="sourceLib"></select>
+        <div class="tiny">Selected plugins use this library's existing per-library settings.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Choose movie / episode</label>
+    <div class="breadcrumb">
+      <button id="upBtn">Up</button>
+      <div id="cwd" class="grow tiny"></div>
+    </div>
+    <div id="browser" class="browser"></div>
+    <div style="margin-top:10px">
+      <div class="tiny">Selected file</div>
+      <div id="selectedFile" class="selected-file">None</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <label style="margin:0" class="grow">Plugins for this task</label>
+      <button id="clearPlugins">Clear</button>
+    </div>
+    <div class="tiny" style="margin-bottom:8px">Check only the plugins you want. Use ↑/↓ to control execution order. Worker plugins run in this order; compatible postprocessor hooks are also delegated.</div>
+    <div id="plugins"></div>
+  </div>
+
+  <div class="card">
+    <button id="queueBtn" class="primary">Add one-off task to queue</button>
+    <div id="message" class="message"></div>
+  </div>
+</div>
+<script>
+(() => {
+  const apiBase = '/unmanic/plugin_api/manual_oneoff_queue';
+  const $ = id => document.getElementById(id);
+  let boot = null;
+  let currentPath = '';
+  let selectedPath = '';
+  let pluginOrder = [];
+
+  async function api(action, opts={}) {
+    const q = new URLSearchParams(opts.query || {});
+    q.set('action', action);
+    const res = await fetch(apiBase + '?' + q.toString(), {
+      method: opts.method || 'GET',
+      headers: opts.body ? {'Content-Type':'application/json'} : undefined,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    let body;
+    try { body = await res.json(); } catch { body = {success:false,error:await res.text()}; }
+    if (!res.ok || body.success === false) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+
+  function fmtSize(bytes) {
+    if (bytes == null) return '';
+    const units=['B','KB','MB','GB','TB'];
+    let v=Number(bytes), i=0;
+    while(v>=1024 && i<units.length-1){v/=1024;i++;}
+    return `${v.toFixed(i<2?0:1)} ${units[i]}`;
+  }
+
+  function renderLibraries() {
+    const libs = boot.libraries || [];
+    for (const el of [$('manualLib'), $('sourceLib')]) {
+      el.innerHTML = '';
+      for (const lib of libs) {
+        const o=document.createElement('option');
+        o.value=lib.id;
+        o.textContent=`${lib.name} — ${lib.path}`;
+        el.appendChild(o);
+      }
+    }
+    const safe = libs.find(l => boot.manual_library_status?.[String(l.id)]?.safe);
+    if (safe) $('manualLib').value=String(safe.id);
+    const source = libs.find(l => String(l.id)!=$('manualLib').value) || libs[0];
+    if (source) $('sourceLib').value=String(source.id);
+    renderManualStatus();
+  }
+
+  function renderManualStatus() {
+    const s=boot.manual_library_status?.[$('manualLib').value];
+    if (!s) { $('manualStatus').textContent=''; return; }
+    $('manualStatus').className='status '+(s.safe?'good':'bad');
+    $('manualStatus').textContent=s.safe ? 'Ready for isolated one-off tasks.' : s.issues.join(' ');
+    $('queueBtn').disabled=!s.safe;
+  }
+
+  function renderPlugins() {
+    const info = new Map((boot.plugins||[]).map(p=>[p.plugin_id,p]));
+    if (!pluginOrder.length) pluginOrder=(boot.plugins||[]).map(p=>p.plugin_id);
+    const box=$('plugins'); box.innerHTML='';
+    pluginOrder=pluginOrder.filter(id=>info.has(id));
+    pluginOrder.forEach((id, idx) => {
+      const p=info.get(id);
+      const row=document.createElement('div'); row.className='row plugin-row';
+      row.innerHTML=`<input type="checkbox" data-plugin-check="${id}">
+        <div class="grow"><div class="name"><strong>${escapeHtml(p.name)}</strong></div>
+        <div class="meta">${escapeHtml(p.plugin_id)} · ${escapeHtml((p.stages||[]).join(', '))}</div></div>
+        <div class="plugin-actions"><button data-up="${id}" title="Move up">↑</button><button data-down="${id}" title="Move down">↓</button></div>`;
+      box.appendChild(row);
+    });
+    box.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>move(b.dataset.up,-1));
+    box.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>move(b.dataset.down,1));
+  }
+
+  function move(id, delta) {
+    const checked = selectedPlugins();
+    const i=pluginOrder.indexOf(id), j=i+delta;
+    if(i<0||j<0||j>=pluginOrder.length)return;
+    [pluginOrder[i],pluginOrder[j]]=[pluginOrder[j],pluginOrder[i]];
+    renderPlugins();
+    document.querySelectorAll('[data-plugin-check]').forEach(c=>c.checked=checked.includes(c.dataset.pluginCheck));
+  }
+
+  function selectedPlugins() {
+    return [...document.querySelectorAll('[data-plugin-check]:checked')].map(x=>x.dataset.pluginCheck);
+  }
+
+  function escapeHtml(s) {
+    return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  async function browse(path='') {
+    currentPath=path||'';
+    $('browser').innerHTML='<div class="row">Loading…</div>';
+    try {
+      const r=await api('browse',{query:{library_id:$('sourceLib').value,path:currentPath}});
+      $('cwd').textContent=r.root + (r.relative_path ? '/' + r.relative_path : '');
+      $('upBtn').disabled=!r.relative_path;
+      $('upBtn').dataset.parent=r.parent||'';
+      const box=$('browser'); box.innerHTML='';
+      if(!r.entries.length){box.innerHTML='<div class="row tiny">No media files or folders here.</div>';return;}
+      for(const e of r.entries){
+        const row=document.createElement('div'); row.className='row clickable';
+        row.innerHTML=`<div>${e.type==='directory'?'📁':'🎞️'}</div><div class="grow"><div class="name">${escapeHtml(e.name)}</div><div class="meta">${e.type==='file'?fmtSize(e.size):'Folder'}</div></div>`;
+        row.onclick=()=>{
+          if(e.type==='directory') browse(e.relative_path);
+          else { selectedPath=e.absolute_path; $('selectedFile').textContent=selectedPath; }
+        };
+        box.appendChild(row);
+      }
+    } catch(err) {
+      $('browser').innerHTML=`<div class="row bad">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function init() {
+    try {
+      boot=await api('bootstrap');
+      renderLibraries(); renderPlugins();
+      await browse('');
+    } catch(err) {
+      $('message').className='message bad'; $('message').textContent='Failed to load: '+err.message;
+    }
+  }
+
+  $('manualLib').onchange=renderManualStatus;
+  $('sourceLib').onchange=()=>{selectedPath='';$('selectedFile').textContent='None';browse('');};
+  $('upBtn').onclick=()=>browse($('upBtn').dataset.parent||'');
+  $('clearPlugins').onclick=()=>document.querySelectorAll('[data-plugin-check]').forEach(x=>x.checked=false);
+  $('queueBtn').onclick=async()=>{
+    const msg=$('message'); msg.textContent=''; msg.className='message';
+    if(!selectedPath){msg.className='message bad';msg.textContent='Choose a media file first.';return;}
+    const plugins=selectedPlugins();
+    if(!plugins.length){msg.className='message bad';msg.textContent='Choose at least one plugin.';return;}
+    $('queueBtn').disabled=true;
+    try {
+      const r=await api('queue',{method:'POST',body:{
+        path:selectedPath,
+        source_library_id:Number($('sourceLib').value),
+        manual_library_id:Number($('manualLib').value),
+        plugin_ids:plugins,
+      }});
+      msg.className='message good';
+      msg.textContent=`Queued task #${r.task.id}: ${r.task.abspath}\nPlugins: ${r.selected_plugins.join(' → ')}`;
+    } catch(err) {
+      msg.className='message bad'; msg.textContent=err.message;
+    } finally {
+      renderManualStatus();
+    }
+  };
+
+  init();
+})();
+</script>
+</body>
+</html>
