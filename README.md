@@ -1,13 +1,14 @@
 # Razorsnake706 Unmanic Custom Plugins
 
-A custom Unmanic plugin repository focused on **media-size analytics, NVENC telemetry, and eventually fully automated GPU quality tuning**.
+A custom Unmanic plugin repository focused on **media-size analytics, NVENC quality calibration, and controlled one-off processing**.
 
-The project currently contains two separate but cooperating plugins:
+The project currently contains three plugins:
 
 | Plugin | Purpose | Current role |
 | --- | --- | --- |
 | **File Size Metrics Plus** | Records detailed before/after processing telemetry and provides a searchable history dashboard. | Data collection, history, diagnostics, export |
-| **Adaptive NVENC Optimizer** | Captures pre-encode references, reads Metrics Plus history, and measures NVENC quality/efficiency. | Pre-encode reference capture + manual GPU calibration; automatic tuning is under development |
+| **Adaptive NVENC Optimizer** | Captures pre-encode references, reads Metrics Plus history, and measures NVENC quality/efficiency. | Reference capture + calibration/review workflow; bounded automatic tuning is still under development |
+| **Manual One-Off Queue** | Lets you browse to one movie/episode and choose the exact processing plugins for that task. | One-off testing, calibration runs, troubleshooting, and manual plugin-chain execution |
 
 The long-term goal is to let Unmanic automatically decide **whether a file is worth encoding and how aggressively the GPU should encode it**, without requiring a fixed quality setting for every show or movie.
 
@@ -23,7 +24,7 @@ Then refresh plugin repositories and install the plugins you want.
 
 > **Why `repo-v2.json`?** During development, Unmanic's remote custom-repository proxy was observed serving stale metadata. The v2 repository URL gives this project a stable cache-busted repository identity, and the plugins also contain a direct GitHub repository-refresh fallback.
 
-## How the two plugins work together
+## How the plugins work together
 
 ```text
 Unmanic processing job
@@ -52,7 +53,7 @@ Adaptive NVENC Optimizer
 Future automated GPU encode decision
 ```
 
-**Metrics Plus is the memory. Adaptive NVENC Optimizer is the decision-maker.** They intentionally remain separate plugins.
+**Metrics Plus is the memory. Adaptive NVENC Optimizer is the quality/calibration layer. Manual One-Off Queue is the controlled execution tool.** They intentionally remain separate plugins.
 
 ## Current project status
 
@@ -73,6 +74,7 @@ The project documentation is stored in the repository so it is versioned and bac
 - [Installation and Setup](docs/Installation.md)
 - [File Size Metrics Plus](docs/File-Size-Metrics-Plus.md)
 - [Adaptive NVENC Optimizer](docs/Adaptive-NVENC-Optimizer.md)
+- [Manual One-Off Queue](docs/Manual-One-Off-Queue.md)
 - [Adaptive Encoding Roadmap](docs/Adaptive-Roadmap.md)
 - [Troubleshooting and Recovery](docs/Troubleshooting-and-Recovery.md)
 - [Development and Release Process](docs/Development-and-Releases.md)
@@ -89,7 +91,8 @@ The repository layout is broadly:
 main
 ├── source/
 │   ├── file_size_metrics_plus/
-│   └── adaptive_nvenc_optimizer/
+│   ├── adaptive_nvenc_optimizer/
+│   └── manual_oneoff_queue/
 ├── docs/
 ├── build_repo.py
 └── .github/workflows/publish.yml
@@ -99,6 +102,7 @@ repo
 ├── repo-v2.json
 ├── file_size_metrics_plus/
 ├── adaptive_nvenc_optimizer/
+├── manual_oneoff_queue/
 └── versions/
 ```
 
@@ -118,3 +122,12 @@ The normal Unmanic Plugins page remains the recovery path if an older plugin ver
 Adaptive tuning is being introduced in stages. The optimizer stays **read-only** until enough telemetry exists and the quality-measurement workflow is validated. Automatic tuning will also use hard safety bounds rather than giving the predictor unrestricted control over encoder settings.
 
 See the [Adaptive Encoding Roadmap](docs/Adaptive-Roadmap.md) for the planned progression.
+
+
+## Manual one-off processing
+
+Manual One-Off Queue is designed for tasks where you do **not** want to change a whole library's plugin configuration. Create a dedicated scanner-disabled manual library, browse a normal source/settings library, select one media file, choose the plugins for that task, then queue it.
+
+Version 0.2.0 adds drag-and-drop plugin ordering, dark-theme dropdown fixes, and persistence for the selected libraries, browse path, plugin order, and checked plugins.
+
+See [Manual One-Off Queue](docs/Manual-One-Off-Queue.md) for the recommended safe setup.
